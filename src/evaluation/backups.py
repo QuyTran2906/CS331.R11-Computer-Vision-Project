@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba phiên bản: khôi phục artefact từ ZIP của từng profile để có thể tiếp tục sau khi
+# Colab ngắt.
 """Restore missing experiment artifacts from explicit Drive backups."""
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import zipfile
 BACKUP_NAME_RE = re.compile(r"^[A-Za-z]+_(?P<profile>[0-9a-f]{16})_(?P<stamp>\d{8}T\d{6}Z)\.zip$")
 
 
+# Chọn ZIP mới nhất của mỗi profile được chỉ định, chỉ chép artefact còn thiếu.
 def auto_restore_drive_backups(runs_root: Path, extra_backup_dir: Optional[Path] = None,
                              profiles: Optional[set[str]] = None) -> list[Path]:
     """Restore backups only from the directory explicitly requested by the caller.

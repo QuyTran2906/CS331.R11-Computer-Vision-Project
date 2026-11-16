@@ -1,3 +1,5 @@
+# Phạm vi: Tiện ích đóng gói code và tùy chọn xuất dataset ZIP để tải lên Drive; không dùng khi
+# sinh ảnh.
 """Package code separately from the dataset; never include environments or weights."""
 import argparse, sys, zipfile
 from pathlib import Path
@@ -5,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Nén code riêng với dataset; kiểm tra ZIP trước khi dùng.
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

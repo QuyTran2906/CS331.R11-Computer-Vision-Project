@@ -1,3 +1,5 @@
+# Phạm vi: Sinh notebook Colab từ mẫu 8 ô. Thay đổi hướng dẫn hoặc code notebook ở đây rồi sinh
+# lại notebook.
 """Generate the runnable notebook with exactly eight sequential cells."""
 import json
 from pathlib import Path
@@ -173,6 +175,7 @@ print("CSV, JSON and previews:", backup / archive.name)
 ]
 
 
+# Biên dịch từng ô để bắt lỗi cú pháp rồi xuất notebook đúng thứ tự.
 def main():
     cells = []
     for index, source in enumerate(CELLS, 1):

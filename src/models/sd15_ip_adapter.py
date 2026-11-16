@@ -1,3 +1,4 @@
+# Phạm vi: V1/V2/V3 dùng DDIM; V3 thêm ảnh tham chiếu qua IP-Adapter và callback trộn latent.
 """SD1.5 inpainting hooks for DDIM blending and optional IP-Adapter.
 
 Latent blending is restricted to DDIM, whose post-step noise level is explicit.
@@ -14,6 +15,7 @@ IP_ADAPTER_REPO = "h94/IP-Adapter"
 IP_ADAPTER_PLUS = "ip-adapter-plus_sd15.safetensors"
 
 
+# Kiểm tra backbone, cờ, ngưỡng và tham số chạy chung của V2/V3.
 def validate_v2_config(config):
     if config.get("pipeline_version", 1) not in (2, 3):
         raise ValueError("Expected pipeline_version 2 or 3")
@@ -44,6 +46,7 @@ def validate_v2_config(config):
             raise ValueError("V2 uses the official h94 IP-Adapter Plus SD1.5 safetensors checkpoint")
 
 
+# Dùng cùng scheduler DDIM để phép so sánh không đổi lịch khử nhiễu giữa các phiên bản.
 def configure_ddim(pipe):
     from diffusers import DDIMScheduler
     pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config, timestep_spacing="leading",
@@ -51,6 +54,7 @@ def configure_ddim(pipe):
     return pipe
 
 
+# Kiểm tra loại UNet, lắp DDIM và chỉ nạp IP-Adapter khi bật ở V3.
 def configure_v2_pipe(pipe, config):
     """Called on CPU at initial load, before model residency management moves to CUDA."""
     validate_v2_config(config)
@@ -73,23 +77,29 @@ def configure_v2_pipe(pipe, config):
     return pipe
 
 
+# Xác định mức nhiễu của latent tham chiếu sau bước scheduler, không dùng nhầm mức trước bước.
 def ddim_previous_timestep(scheduler, timestep):
     """Noise level AFTER scheduler.step, including strength-truncated schedules."""
     return int(timestep) - int(scheduler.config.num_train_timesteps) // int(scheduler.num_inference_steps)
 
 
+# Giữ latent sinh ở vùng được sửa, lấy latent tham chiếu ở vùng còn lại.
 def blend_latents(generated, reference, editable):
     """editable=1 keeps generation; editable=0 restores the reference latent."""
     return editable * generated + (1 - editable) * reference
 
 
+# Callback theo từng bước denoise của V3.
 class ReferenceLatentBlender:
+    # Giữ latent sạch, nhiễu cố định và mask ở độ phân giải latent.
     def __init__(self, clean_latents, noise, editable_mask):
         self.clean = clean_latents
         self.noise = noise
         self.editable = editable_mask
         self.steps = []
 
+    # Tại mỗi bước, giữ latent sinh trong mask và thay phần còn lại bằng tham chiếu đúng mức
+    # nhiễu.
     def __call__(self, pipe, step, timestep, tensors):
         import torch
         prev = ddim_previous_timestep(pipe.scheduler, timestep)
@@ -107,6 +117,7 @@ class ReferenceLatentBlender:
         return tensors
 
 
+# Mã hóa seed bằng VAE, đổi mask xuống lưới latent và dùng RNG riêng cho nhiễu tham chiếu.
 def make_latent_blender(pipe, image, mask_image, device, seed):
     import torch
     import torch.nn.functional as F
@@ -123,17 +134,20 @@ def make_latent_blender(pipe, image, mask_image, device, seed):
     return ReferenceLatentBlender(clean, noise, editable)
 
 
+# Bọc một lượt chạy V3: đưa crop visible vào IP-Adapter và đăng ký callback latent khi có cờ.
 class AdvancedInpaintPass:
     """Wrap a single V1 ROI pass to retain its cropping and frequency locks.
 
     A wrapper is constructed per attempt. No callbacks or reference GPU tensors
     are retained by the model registry after a call.
     """
+    # Lưu pipeline và crop visible để dùng cho một lượt tạo ứng viên.
     def __init__(self, pipe, config, reference_image, device, seed):
         self.pipe, self.config = pipe, config
         self.reference_image, self.device, self.seed = reference_image, device, seed
         self.diagnostics = {}
 
+    # Bổ sung đối số IP-Adapter và callback nếu bật, sau đó chạy diffusion và lưu chẩn đoán.
     def __call__(self, **kwargs):
         blender = None
         if self.config["use_ip_adapter"]:

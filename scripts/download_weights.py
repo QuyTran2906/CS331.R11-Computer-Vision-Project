@@ -1,8 +1,10 @@
+# Phạm vi: Ô 3: tải/cache trọng số trước khi chạy, không thực hiện inference.
 """Fetch the author's official Pix2Gestalt checkpoint without global torch.load overrides."""
 from pathlib import Path
 import shutil
 ROOT=Path(__file__).resolve().parents[1]
 
+# Tải checkpoint Pix2Gestalt và cache đúng các file cần cho Qwen, SD1.5 và adapter.
 def main():
     from huggingface_hub import hf_hub_download, snapshot_download
     folder=ROOT/"ckpt"

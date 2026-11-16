@@ -1,3 +1,4 @@
+# Phạm vi: V2 dùng mô tả và critic dạng văn bản; V3 tái dùng crop đầu vào và giới hạn token.
 """Visual prompt rendering, Qwen3-VL reasoning/critique, and CLIP prompt verification."""
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ DEFAULT_NEGATIVE_PROMPT = (
     "text, watermark, artifacts"
 )
 
+# Giới hạn token theo tokenizer diffusion, tránh cắt theo số ký tự.
 def truncate_tokens_clean(text: str, tokenizer, max_tokens: int = 70) -> str:
     """Truncate text to `max_tokens` without triggering HF `> 77` sequence warnings."""
     if not text:
@@ -31,6 +33,7 @@ def truncate_tokens_clean(text: str, tokenizer, max_tokens: int = 70) -> str:
         return " ".join(words[:max_tokens])
 
 
+# Tách tên vật thể, phần khuất và prompt từ các dòng có nhãn.
 def parse_structured_vlm_reasoning(raw_text: str, fallback_query: str = "") -> dict[str, str]:
     """Extract `object_name`, `occluded_parts`, and clean diffusion `sd_prompt`."""
     cleaned = re.sub(r"\*+", "", raw_text or "").strip()
@@ -64,6 +67,7 @@ def parse_structured_vlm_reasoning(raw_text: str, fallback_query: str = "") -> d
     }
 
 
+# Làm tối bối cảnh và đánh dấu vật thể; chỉ tô vùng khuất khi caller gửi mask tương ứng.
 def _render_censored_scene(image: np.ndarray, vis: np.ndarray, missing: np.ndarray) -> np.ndarray:
     """Dim background to 35%, censor `missing` with opaque slate stripes, and outline regions."""
     highlighted = (image.astype(np.float32) * 0.35).astype(np.uint8)
@@ -82,6 +86,7 @@ def _render_censored_scene(image: np.ndarray, vis: np.ndarray, missing: np.ndarr
     return highlighted
 
 
+# Cô lập phần visible trên nền trắng làm tham chiếu màu và bề mặt.
 def _render_isolated_visible_crop(image: np.ndarray, vis: np.ndarray, target_size: int) -> np.ndarray:
     vy1, vx1, vy2, vx2 = mask_bbox(vis)
     vh, vw = vy2 - vy1 + 1, vx2 - vx1 + 1
@@ -98,6 +103,7 @@ def _render_isolated_visible_crop(image: np.ndarray, vis: np.ndarray, target_siz
     return resize_array(iso_patch, (target_size, target_size), mode="linear")
 
 
+# Tạo crop ngữ cảnh và crop visible cho V2/V3 cùng kích thước.
 def build_vlm_visual_prompts(
     image: np.ndarray,
     visible_mask: np.ndarray,
@@ -121,6 +127,7 @@ def build_vlm_visual_prompts(
     return context_rgb, isolated_rgb, panel_rgb
 
 
+# Chuẩn bị hai ảnh và chỉ giải mã token mới do Qwen sinh.
 def _generate_qwen_vl(vlm, image_a: np.ndarray, image_b: np.ndarray, instruction: str, max_new_tokens: int) -> str:
     import torch
     from qwen_vl_utils import process_vision_info
@@ -159,6 +166,7 @@ def _generate_qwen_vl(vlm, image_a: np.ndarray, image_b: np.ndarray, instruction
     )[0].strip()
 
 
+# Lấy mô tả cơ bản của V2 theo định dạng văn bản có nhãn.
 def run_basic_vlm_reasoning(
     vlm,
     context_rgb: np.ndarray,
@@ -191,9 +199,11 @@ def run_basic_vlm_reasoning(
     return parse_structured_vlm_reasoning(raw_output, fallback_query=user_query)
 
 
+# Đọc các điểm thành phần, tính điểm tổng hợp và lấy phản hồi chỉnh sửa.
 def _parse_critic_response(output_text: str) -> dict:
     cleaned = re.sub(r"\*+", "", output_text)
 
+    # Đọc điểm của tiêu chí cụ thể và giới hạn vào miền điểm hợp lệ.
     def _parse_score(label: str) -> float:
         match = re.search(rf"{label}\s*:\s*([\d.]+)", cleaned, re.IGNORECASE)
         if not match:
@@ -219,6 +229,7 @@ def _parse_critic_response(output_text: str) -> dict:
     }
 
 
+# Đưa ảnh hoàn chỉnh và ngữ cảnh vào Qwen để V2 kiểm tra chất lượng.
 def run_target_aware_critique(
     vlm,
     critic_completed_rgb: np.ndarray,

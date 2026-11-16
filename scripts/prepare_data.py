@@ -1,3 +1,4 @@
+# Phạm vi: Ô 4: chọn và xuất tập mẫu COCO-A cố định để mọi phiên bản xử lý đúng cùng đối tượng.
 """Audit COCO-A and export reproducible object subsets."""
 import argparse
 import json
@@ -9,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 from src.data.cocoa_loader import CocoaDataset, audit, export_samples
 
 
+# Chọn config split, bảo vệ test và ghi manifest/preview sau khi audit.
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

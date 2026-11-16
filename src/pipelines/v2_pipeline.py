@@ -1,3 +1,5 @@
+# Phạm vi: Lõi điều phối V2/V3. V2 chạy mặc định; V3 kế thừa luồng và thay các bước mô tả, điều
+# kiện sinh và critic.
 """Basic SD1.5 closed loop and shared orchestration for V3."""
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ from src.vision.roi import extract_square_roi, mask_bbox
 from src.eval.metrics import compute_appearance_coherence_metrics
 
 
+# Cắt bốn bảng cùng ROI: cảnh gốc, vùng thấy, kết quả và bản đồ vùng sinh.
 def critic_panels(image, visible, amodal, completed, size=384):
     """Four spatially registered panels; background and target cannot swap identities."""
     y1, x1, y2, x2 = mask_bbox(amodal)
@@ -38,38 +41,47 @@ def critic_panels(image, visible, amodal, completed, size=384):
             for i, a in enumerate(arrays)]
 
 
+# Ưu tiên ứng viên PASS; nếu chưa PASS thì chọn điểm hợp lệ cao nhất.
 def candidate_rank(critique):
     """A valid PASS always outranks a rejection; invalid JSON is not a score of zero."""
     score = critique.get("score")
     return (bool(critique.get("accepted")), float(score) if score is not None else float("-inf"))
 
 
+# Lõi V2 và vòng lặp mà V3 kế thừa.
 class V2Pipeline:
+    # V2 lấy mô tả cơ bản bằng Qwen; V3 thay bằng micro-attributes.
     def _describe(self, context, isolated, query):
         return run_basic_vlm_reasoning(self.models.vlm, context, isolated, user_query=query)
 
+    # Xác thực config và lưu model manager dùng chung.
     def __init__(self, models, config):
         validate_v2_config(config)
         self.models, self.config, self.device = models, config, models.device
+    # Tạo crop ngữ cảnh và crop visible riêng; suy luận trước khi tạo prior.
     def _reason(self, image, vis, query):
         # Step 1 uses only image + visible mask; no hidden-mask geometry or labels.
         context, isolated, panel = build_vlm_visual_prompts(image, vis, vis, target_size=384)
         reasoning = self._describe(context, isolated, query)
         return reasoning, context, isolated, panel
 
+    # Dùng hợp visible/hidden làm biên cố định để tạo prior RGB và seed tinh chỉnh.
     def _prior(self, image, vis, occ, job):
         amodal = vis | occ
         raw = synthesize_amodal_prior(self.models, self.config, image, vis, amodal, job)
         info = build_oracle_appearance_seed(image, vis, occ, raw["p2g_rgb_full"], raw["p2g_alpha_full"])
         return amodal, raw, info
 
+    # So khớp prompt với crop visible để kiểm tra danh tính vật thể.
     def _verify_prompt(self, isolated, reasoning, query):
         return verify_prompt_with_clip(self.models.clip_model, self.models.clip_processor,
                                        self.device, isolated, reasoning, user_query=query)
 
+    # V2 lấy pipeline SD1.5 thường; V3 bọc thêm adapter và latent callback.
     def _inpaint_pipe(self, isolated, seed):
         return self.models.pipe
 
+    # Chạy SD1.5 trong ROI theo seed, mask hidden và tham số của lượt hiện tại.
     def _refine(self, prior, vis, amodal, isolated, prompt, negative, strength, guidance, seed):
         # Requesting .pipe offloads Qwen before activating SD1.5.
         pipe = self._inpaint_pipe(isolated, seed)
@@ -81,12 +93,14 @@ class V2Pipeline:
                                 unfilled_mask=prior["unfilled_mask"])
         return rgb, getattr(pipe, "diagnostics", {})
 
+    # V2 chấm tổng hợp bằng Qwen và kiểm tra ngưỡng; V3 dùng JSON strict.
     def _critique(self, panels, context, name):
         old = run_target_aware_critique(self.models.vlm, panels[2], context, name)
         accepted = old["score"] >= self.config["critique_threshold"]
         return dict(old, accepted=accepted, final_decision="PASS" if accepted else "REJECT",
                     reason=old["feedback"], repair_instruction=old["feedback"], valid_json=None)
 
+    # Chạy đầy đủ một mẫu, lưu từng ứng viên và trả ảnh RGBA được chọn.
     def complete(self, image, visible_mask, text_query="", job_dir=None, occluded_mask=None):
         t0 = time.perf_counter()
         vis = np.asarray(visible_mask, bool)
@@ -100,16 +114,19 @@ class V2Pipeline:
             job.mkdir(parents=True, exist_ok=True)
             (job / "critic_logs.jsonl").write_text("", encoding="utf-8")
 
+        # Lưu artefact chẩn đoán khi runner có cung cấp thư mục mẫu.
         def save_json(name, data):
             if job:
                 (job / name).write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
+        # 1. Tách phần nhìn thấy ra khỏi ngữ cảnh trước khi nhờ Qwen mô tả bề mặt.
         reasoning, context, isolated, panel = self._reason(image, vis, text_query)
         save_json("micro_attributes.json" if self.config["use_micro_attributes"] else "basic_reasoning.json", reasoning)
         if job:
             (job / "reasoning.txt").write_text(reasoning["raw"], encoding="utf-8")
             Image.fromarray(panel).save(job / "vlm_visual_prompt.jpg")
             Image.fromarray(isolated).save(job / "visible_reference.png")
+        # 2. Dựng seed RGB từ prior. Mask đầu ra đã biết từ annotation.
         amodal, raw_prior, prior = self._prior(image, vis, occ, job)
         missing = amodal & ~vis
         pad = dict(needs_outpaint=False, pad_top=0, pad_bottom=0, pad_left=0, pad_right=0)
@@ -126,11 +143,13 @@ class V2Pipeline:
         tokenizer = self.models.pipe.tokenizer
         base_prompt = truncate_tokens_clean(prompt, tokenizer, max_tokens=60)
         negative = truncate_tokens_clean(DEFAULT_NEGATIVE_PROMPT, tokenizer, max_tokens=70)
+        # 3. Prior bị thiếu nhiều thì tăng strength để SD1.5 có thêm khả năng vẽ lại.
         fraction = float(prior["unfilled_fraction"])
         high_strength = self.config.get("unfilled_refine_strength", .62)
         strength = float(high_strength if fraction >= .25 else self.config.get("prior_refine_strength", .24))
         history, best, best_critique, selected = [], None, None, None
         limit = self.config["max_critic_iter"] if self.config.get("enable_critic", True) else 1
+        # 4. Mỗi lượt sinh rồi chấm; phản hồi gần nhất có thể sửa prompt của lượt sau.
         for attempt in range(limit if missing.any() else 0):
             seed = int(self.config["seed"]) + attempt * 1009
             guidance = min(9.0, float(self.config["guidance_scale"]) + attempt * float(self.config["retry_guidance_step"]))
@@ -169,6 +188,7 @@ class V2Pipeline:
             if critique["accepted"]:
                 break
 
+        # 5. Nếu critic từ chối mọi lượt, vẫn xuất ứng viên tốt nhất và ghi trạng thái riêng.
         if best is None:
             best = finalize_rgba(image, amodal, *image.shape[:2])
         accepted = bool(best_critique and best_critique["accepted"])

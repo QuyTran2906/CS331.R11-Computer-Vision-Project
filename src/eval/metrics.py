@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba phiên bản: IoU kiểm tra mask; SeamMAE và histogram màu chẩn đoán mối nối giữa
+# phần thấy và phần sinh.
 """Geometric IoU and reference-free appearance coherence metrics."""
 from __future__ import annotations
 
@@ -7,11 +9,13 @@ import numpy as np
 from src.vision.image_ops import binary_dilate, nearest_foreground_fill
 
 
+# Đo giao trên hợp; với mask cho sẵn, điểm này không đánh giá khả năng sinh RGB.
 def iou(predicted: np.ndarray, target: np.ndarray) -> Optional[float]:
     union = np.logical_or(predicted, target).sum()
     return float(np.logical_and(predicted, target).sum() / union) if union else None
 
 
+# Đo mức chênh ở dải pixel tiếp giáp và độ giống phân bố màu. Không cần RGB thật vùng khuất.
 def compute_appearance_coherence_metrics(
     image: np.ndarray,
     visible_mask: np.ndarray,

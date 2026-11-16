@@ -1,6 +1,9 @@
+# Phạm vi: V3: giao tiếp Qwen bằng ảnh và text, kiểm tra JSON và lưu phản hồi thô nếu cần sửa định
+# dạng.
 """Shared Qwen JSON generation and parsing."""
 import json
 
+# Bóc code fence nếu có, sau đó yêu cầu phản hồi phân tích được thành object JSON.
 def _json_object(raw):
     text = str(raw).strip()
     if text.startswith("```") and text.endswith("```"):
@@ -14,6 +17,7 @@ def _json_object(raw):
     return value
 
 
+# Xác minh kiểu và độ dài của trường văn bản trước khi dùng làm prompt.
 def _string(data, name, limit=500):
     value = data.get(name)
     if not isinstance(value, str) or not value.strip() or len(value) > limit:
@@ -21,6 +25,7 @@ def _string(data, name, limit=500):
     return " ".join(value.split())
 
 
+# Đóng gói ảnh/text cho Qwen, giải mã phần token của câu trả lời.
 def generate_json_response(vlm, images, system, instruction):
     """Deterministic multimodal generation; JSON is subsequently schema-validated."""
     import torch
@@ -42,6 +47,7 @@ def generate_json_response(vlm, images, system, instruction):
                                      clean_up_tokenization_spaces=False)[0].strip()
 
 
+# Thử parse và yêu cầu Qwen sửa định dạng nếu cần, giữ cả phản hồi lỗi để chẩn đoán.
 def validated_generation(vlm, images, system, instruction, parser, repair_attempts=1):
     """Retry JSON formatting once; preserve every raw response and validation error."""
     responses = []

@@ -1,3 +1,4 @@
+# Phạm vi: Ô 3: tạo môi trường Colab, ghim thư viện và cài code phụ thuộc của Pix2Gestalt.
 """Isolated Linux/Colab GPU environment setup for Amodal Appearance Completion."""
 import argparse, json, os, subprocess, sys
 from pathlib import Path
@@ -6,17 +7,20 @@ os.environ["MPLBACKEND"] = "Agg"
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Thực thi lệnh cài đặt trong thư mục project và dừng nếu lệnh lỗi.
 def run(command, **kwargs):
     print(">", " ".join(map(str, command)), flush=True)
     subprocess.run(list(map(str, command)), cwd=ROOT, check=True, **kwargs)
 
 
+# Lấy repo phụ thuộc nếu chưa có; trả commit để ghi phiên bản môi trường.
 def clone(url, path):
     if not (path / ".git").exists():
         run(["git", "clone", "--depth", "1", url, path])
     return subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
 
 
+# Tạo venv GPU, cài dependency, thêm đường dẫn vendor và kiểm tra môi trường.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-downloads", action="store_true")

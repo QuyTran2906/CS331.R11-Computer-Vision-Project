@@ -1,9 +1,11 @@
+# Phạm vi: V2/V3: tổng hợp lượt thử critic theo mẫu và signature; V1 không có critic.
 """Resume-safe, compact batch critic log; raw Qwen responses remain per sample."""
 import json
 import os
 from pathlib import Path
 
 
+# Cập nhật log tổng hợp theo chữ ký mẫu; chạy lại không cộng trùng lượt cũ.
 def update_critic_log(root, result):
     if result.get("config", {}).get("pipeline_version") not in (2, 3):
         return

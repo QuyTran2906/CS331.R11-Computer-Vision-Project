@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba dùng hàm inpaint trong ROI; V2/V3 dùng thêm nhánh tinh chỉnh dựa trên prior và
+# khóa màu.
 """512x512 ROI inpainting refinement stages with frequency-separated color locking."""
 from __future__ import annotations
 
@@ -9,6 +11,7 @@ from src.vision.image_ops import binary_dilate, binary_erode
 from src.vision.roi import extract_square_roi, mask_bbox, paste_square_roi
 
 
+# Cắt ROI/MASK, chạy SD1.5 trên canvas 512×512 và chiếu ảnh về kích thước ban đầu.
 def run_inpaint_roi_pass(
     pipe,
     device: str,
@@ -53,6 +56,7 @@ def run_inpaint_roi_pass(
     return paste_square_roi(seed_canvas, out_roi_np, roi, resize_mode="linear")
 
 
+# Giảm viền trắng rò từ nền vào vùng khuất gần mép vật thể.
 def _suppress_outer_rim_white_bleed(
     out: np.ndarray,
     seed_canvas: np.ndarray,
@@ -69,6 +73,8 @@ def _suppress_outer_rim_white_bleed(
     return out
 
 
+# V2/V3: chỉ chép RGB sinh vào vùng ẩn, với mức khóa màu khác nhau cho prior tốt và vùng prior
+# thiếu.
 def refine_exact_mask(
     pipe,
     device: str,

@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba phiên bản dùng bộ quản lý model này. V1 chỉ lấy SD1.5; V2/V3 thêm prior, Qwen và
+# CLIP.
 """Cache models in host RAM and keep only the active generation stage on CUDA."""
 from __future__ import annotations
 
@@ -7,6 +9,7 @@ from src.models.pix2gestalt_prior import Pix2GestaltModel
 from src.models.qwen_vl import DEFAULT_VLM_ID, QwenVLModel
 
 
+# Giữ model đã nạp trong RAM và chỉ đưa stage đang dùng lên GPU.
 class FoundationModels:
     """Lazy, single-GPU model registry shared by both completion pipelines.
 
@@ -15,6 +18,7 @@ class FoundationModels:
     and tokenizers stay on CPU. Loaded weights are reused across samples.
     """
 
+    # Lưu cấu hình và tạo cache rỗng; chưa tải checkpoint tại đây.
     def __init__(self, inpainting_model_id: str, clip_model_id: str,
                  vlm_model_id: str = DEFAULT_VLM_ID, device: str = "cuda", advanced_config=None,
                  refinement_scheduler=None):
@@ -29,6 +33,7 @@ class FoundationModels:
         self._clip_processor = None
         print("[Models] Sequential offload enabled: one stage on GPU; cached weights in CPU RAM.", flush=True)
 
+    # Dọn bộ nhớ chưa còn tham chiếu sau khi đổi stage.
     @staticmethod
     def _clear_cache():
         import torch
@@ -36,12 +41,14 @@ class FoundationModels:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+    # Đưa model đang hoạt động về CPU để GPU đủ chỗ cho stage kế.
     def release_gpu(self):
         if self._active is not None:
             self._models[self._active].to("cpu")
             self._active = None
             self._clear_cache()
 
+    # Khởi tạo model theo tên stage; cấu hình DDIM và adapter được gắn tại lúc tạo pipeline.
     def _load(self, name):
         import torch
         if name == "shape":
@@ -71,6 +78,7 @@ class FoundationModels:
             return model
         raise ValueError(f"Unknown model stage: {name}")
 
+    # Tái dùng model đã nạp hoặc tạo khi cần; chuyển model cũ về CPU trước.
     def _activate(self, name):
         if self._active == name:
             return self._models[name]
@@ -90,22 +98,27 @@ class FoundationModels:
         print(f"[Models] {name} ready on {self.device}.", flush=True)
         return model
 
+    # Trả Pix2Gestalt cho bước tạo prior của V2/V3.
     @property
     def shape_predictor(self):
         return self._activate("shape")
 
+    # Trả Qwen dùng cho bước suy luận và critic ở V2/V3.
     @property
     def vlm(self):
         return self._activate("vlm")
 
+    # Trả SD1.5 inpainting dùng cho cả ba phiên bản.
     @property
     def pipe(self):
         return self._activate("inpainting")
 
+    # Trả encoder kiểm tra prompt của V2/V3.
     @property
     def clip_model(self):
         return self._activate("clip")
 
+    # Chuẩn hóa crop và prompt cho CLIP; processor được dùng lại.
     @property
     def clip_processor(self):
         if self._clip_processor is None:

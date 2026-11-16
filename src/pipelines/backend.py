@@ -1,3 +1,4 @@
+# Phạm vi: Cả ba phiên bản: kiểm tra config, chọn lớp thực thi và giải phóng GPU sau mỗi mẫu.
 """Entry point for the three SD1.5 experiments."""
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from src.models.sd15_ip_adapter import validate_v2_config
 from src.pipelines.v1_direct import V1Direct, validate_sd15_direct
 
 
+# Chặn backbone hoặc bộ cờ không đúng vai trò V1/V2/V3 trước khi dùng CUDA.
 def validate_experiment_config(config):
     version = config.get("pipeline_version")
     if type(version) is not int or version not in (1, 2, 3):
@@ -30,7 +32,9 @@ def validate_experiment_config(config):
     return version
 
 
+# Cổng gọi chung để runner không phải biết chi tiết từng pipeline.
 class AmodalBackend:
+    # Tạo memory manager và chọn đúng lớp thực thi từ số phiên bản.
     def __init__(self, config):
         import torch
 
@@ -57,9 +61,11 @@ class AmodalBackend:
             from src.pipelines.v3_proposed import V3Proposed
             self.completer = V3Proposed(self.models, config)
 
+    # Chuyển thư mục artefact hiện tại cho pipeline trước khi sinh ảnh.
     def begin_sample(self, job):
         self.job = Path(job)
 
+    # Truyền ảnh/mask vào pipeline và luôn trả model về CPU, kể cả khi mẫu lỗi.
     def complete(self, image, visible, label, occluded_mask=None):
         try:
             return self.completer.complete(image=image, visible_mask=visible,

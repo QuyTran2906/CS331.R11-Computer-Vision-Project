@@ -1,3 +1,4 @@
+# Phạm vi: Ô 5–7: chạy một phiên bản trên manifest chung, lưu kết quả và backup theo profile.
 """Run the amodal completion pipeline on prepared COCO-A targets with per-target artifacts/resume."""
 import argparse, contextlib, hashlib, json, os, shutil, sys, time
 from pathlib import Path
@@ -9,16 +10,23 @@ from src.evaluation.runner import run_one
 from src.evaluation.reporting import occlusion_bin, write_json, write_reports
 from src.evaluation.validation import validate_manifest
 
+# Sao nội dung terminal sang pipeline.log để đọc lại khi phiên bị ngắt.
 class Tee:
+    # Lưu các luồng đích (terminal và file log).
     def __init__(self, *streams): self.streams = streams
+    # Gửi cùng nội dung đến mọi luồng đích.
     def write(self, text):
         for stream in self.streams: stream.write(text)
         return len(text)
+    # Đẩy nội dung log đã đệm ra đĩa.
     def flush(self):
         for stream in self.streams: stream.flush()
+    # Để chương trình con dùng dạng output phù hợp với file log.
     def isatty(self): return False
+    # Lấy thuộc tính file còn thiếu từ luồng chính.
     def __getattr__(self, name): return getattr(self.streams[0], name)
 
+# Nén artefact profile và chỉ thay file ZIP đích khi bản chép đã hoàn tất.
 def backup(job_root, destination):
     if not destination: return
     destination = Path(destination)
@@ -34,6 +42,7 @@ def backup(job_root, destination):
     finally:
         Path(archive).unlink(missing_ok=True)
 
+# Preflight, tính profile, phục hồi artefact, chạy các mẫu còn thiếu và ghi báo cáo.
 def main():
     if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
@@ -68,6 +77,8 @@ def main():
     print("[Preflight] All selected samples valid.", flush=True)
     if args.validate_only:
         return
+    # Profile băm config, byte mã nguồn và phiên bản môi trường để sai khác tạo thư mục kết quả
+    # riêng.
     files = list((ROOT / "src").rglob("*.py"))
     files += [ROOT / name for name in ["installed_gpu_versions.txt", "dependency_versions.json"] if (ROOT / name).is_file()]
     code_hash = hashlib.sha256(b"".join(p.read_bytes() for p in sorted(files))).hexdigest()

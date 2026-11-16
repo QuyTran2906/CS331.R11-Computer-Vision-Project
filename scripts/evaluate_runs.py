@@ -1,3 +1,5 @@
+# Phạm vi: Ô 8: chấm các ảnh đã lưu của một profile, có thể resume bằng JSON cùng thư mục
+# artefact.
 """Evaluate saved completions without rerunning generation (resumable sidecars)."""
 import argparse
 import hashlib
@@ -17,6 +19,7 @@ from src.evaluation.runner import read_mask, read_rgb, sha
 from src.vision.image_ops import binary_dilate
 
 
+# Chấm theo manifest, xác minh ảnh trước mỗi mẫu và dùng lại score khi signature trùng.
 def evaluate_profile(profile, records, device="cuda", continue_on_error=False, evaluate=None,
                      checkpoint=None, backup_every=5):
     """Read verified saved artifacts only; generation artifacts and result.json stay unchanged."""
@@ -108,6 +111,7 @@ def evaluate_profile(profile, records, device="cuda", continue_on_error=False, e
     return destination, rows
 
 
+# Chọn profile tường minh, khôi phục backup nếu được yêu cầu và chấm ảnh đã lưu.
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

@@ -1,3 +1,5 @@
+# Phạm vi: Ô 8: xác minh các kết quả được chấm từ đúng manifest và đúng ảnh/mask đã lưu trước khi
+# ghép bảng.
 """Verify saved scores against job artifacts and the requested manifest."""
 import hashlib
 import json
@@ -6,14 +8,17 @@ from pathlib import Path
 from src.evaluation.runner import sha
 
 
+# Đọc JSON bằng UTF-8 để giữ tên mẫu và thông tin annotation.
 def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+# Băm toàn bộ danh sách record; thay một mẫu sẽ đổi khóa so sánh.
 def subset_hash(records):
     return hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest()[:12]
 
 
+# Tìm bộ điểm của đúng subset và kiểm tra mỗi mẫu xuất hiện đúng một lần.
 def load_evaluation(profile, records):
     candidates = list(profile.glob(f"evaluation/*/{subset_hash(records)}/per_sample.json"))
     if not candidates:
@@ -26,6 +31,7 @@ def load_evaluation(profile, records):
     return report.parent, {r["sample_id"]: r for r in rows}, read_json(report.parent / "protocol.json")
 
 
+# Kiểm tra checksum ảnh/mask và signature của bảng điểm trước khi so sánh.
 def verified_jobs(profile, records, directory, rows):
     jobs = {}
     for path in sorted(profile.glob("*/*/result.json"), key=lambda p: p.stat().st_mtime):

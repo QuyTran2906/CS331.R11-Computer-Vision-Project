@@ -1,3 +1,4 @@
+# Phạm vi: Cả ba phiên bản: preflight ảnh và mask trên CPU trước khi nạp trọng số.
 """Read-only validation of prepared samples before expensive GPU inference."""
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ from PIL import Image
 from src.evaluation.runner import read_rgb, resolve_sample
 
 
+# Kiểm tra kích thước, số kênh và giá trị nhị phân trước khi chuyển sang bool.
 def strict_mask(path, shape):
     with Image.open(path) as opened:
         array = np.array(opened)
@@ -17,6 +19,7 @@ def strict_mask(path, shape):
     return array > 0
 
 
+# Đối chiếu ảnh, visible/amodal/hidden mask và tỷ lệ che từ manifest.
 def validate_record(record, base):
     if record.get("split") not in ("train", "dev", "test"):
         raise ValueError("Unknown or missing split")
@@ -44,6 +47,7 @@ def validate_record(record, base):
                 visible_canvas_fraction=float(visible.mean()))
 
 
+# Thu tất cả lỗi mẫu vào cùng báo cáo để sửa dữ liệu trước khi chạy GPU.
 def validate_manifest(records, base):
     ids = [r["sample_id"] for r in records]
     if len(set(ids)) != len(ids):

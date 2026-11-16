@@ -1,3 +1,5 @@
+# Phạm vi: V2/V3: phối màu prior Pix2Gestalt với phần nhìn thấy, điền lỗ và giảm bóng/vệt từ vật
+# che trước khi inpaint.
 """Appearance seed construction, color harmonization, and boundary continuation."""
 from __future__ import annotations
 
@@ -13,6 +15,8 @@ from src.vision.image_ops import (
 )
 
 
+# Tạo canvas khởi tạo từ phần thấy và prior đã hòa màu; trả mask vùng prior thiếu để chọn
+# strength.
 def build_oracle_appearance_seed(
     image: np.ndarray,
     visible_mask: np.ndarray,
@@ -39,6 +43,7 @@ def build_oracle_appearance_seed(
             "ref_p90_luma": 255.0,
         }
 
+    # Tạo tham chiếu từ pixel của vật thể nhìn thấy, không dùng màu vật che trong vùng hidden.
     # 1. Occluder-free boundary continuation seed (`telea_seed`) propagated purely from `image[vis]`.
     vis_only = np.full_like(image, 255, dtype=np.uint8)
     vis_only[vis] = image[vis]
@@ -86,6 +91,7 @@ def build_oracle_appearance_seed(
     valid_p2g = (p2g_alpha_full >= 0.55) & (~(is_studio_white if ref_p90_luma < 212.0 else False))
     valid_p2g_core = binary_erode(valid_p2g & amodal, 2)
 
+    # Căn chỉnh màu prior bằng các pixel có thể đối chiếu với phần nhìn thấy.
     # 2. Affine per-channel color harmonization anchored on `vis & valid_p2g_core`.
     anchor = binary_erode(vis, 1) & valid_p2g_core
     if anchor.sum() < 25:
@@ -106,6 +112,7 @@ def build_oracle_appearance_seed(
     harmonized_f = np.clip(p2g_f * gain[None, None, :] + bias[None, None, :], 0.0, 255.0)
     telea_f = telea_seed.astype(np.float32)
 
+    # Giảm mảng bóng bất thường do vật che để lại trong prior.
     # 3. Enclosed Homogeneous Light-Surface Shadow Suppressor.
     has_left = np.maximum.accumulate(vis, axis=1)
     has_right = np.maximum.accumulate(vis[:, ::-1], axis=1)[:, ::-1]
@@ -145,6 +152,7 @@ def build_oracle_appearance_seed(
             blend_w = np.clip(soft_weight * 0.88, 0.0, 0.88)
             harmonized_f = harmonized_f * (1.0 - blend_w) + telea_f * blend_w
 
+    # Cho phần màu quan sát được chuyển dần vào prior thay vì đổi màu gắt ở đường nối.
     # 4. Smooth 3-px boundary ramp from `image[vis]` (`telea_seed`) into `harmonized_f` inside `occ`.
     valid_occ_core = occ & valid_p2g_core & (~unfilled_mask)
     prior_blend_f = harmonized_f.copy()
@@ -157,6 +165,7 @@ def build_oracle_appearance_seed(
 
     prior_blend = np.clip(prior_blend_f, 0.0, 255.0).astype(np.uint8)
 
+    # Kết hợp phần thấy và prior đã sửa; đánh dấu phần prior không đủ tốt để inpaint mạnh hơn.
     # 5. Assemble seed canvas + fill unfilled regions + decontaminate 6-px outer collar.
     seed = np.full_like(image, 255, dtype=np.uint8)
     seed[valid_occ_core] = prior_blend[valid_occ_core]

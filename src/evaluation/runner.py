@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba phiên bản: đọc một mẫu, kiểm tra khả năng resume, gọi backend, lưu ảnh RGBA,
+# mask, trace và checksum.
 """CPU-side run management, checksum resume verification, and sample evaluation."""
 from __future__ import annotations
 
@@ -13,20 +15,24 @@ from PIL import Image, ImageDraw
 from src.eval.metrics import iou
 
 
+# Băm byte của artefact để phát hiện tệp bị đổi hoặc thiếu.
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+# Đọc ảnh ở chế độ RGB với đúng thứ tự kênh.
 def read_rgb(path):
     with Image.open(path) as image:
         return np.array(image.convert("RGB"))
 
 
+# Đọc PNG mask thành mảng bool cùng hệ tọa độ ảnh.
 def read_mask(path):
     with Image.open(path) as image:
         return np.array(image.convert("L")) > 0
 
 
+# Đưa kết quả về canvas gốc trước khi lưu và chấm.
 def crop_original(array, pad, original_shape):
     h, w = original_shape[:2]
     pt, pb, pl, pr = (int(pad.get(k, 0)) for k in ("pad_top", "pad_bottom", "pad_left", "pad_right"))
@@ -35,6 +41,7 @@ def crop_original(array, pad, original_shape):
     return array[pt : pt + h, pl : pl + w].copy()
 
 
+# Tạo ảnh xem nhanh đầu vào, mask và kết quả của một mẫu.
 def preview(image, visible, amodal, rgba, path, mask_label="Amodal prediction"):
     tiles = [image, visible.astype(np.uint8) * 255, amodal.astype(np.uint8) * 255, rgba]
     labels = ["Input", "Visible input", mask_label, "Completion"]
@@ -52,6 +59,7 @@ def preview(image, visible, amodal, rgba, path, mask_label="Amodal prediction"):
     canvas.save(path)
 
 
+# Giải đường dẫn tương đối và kiểm tra tệp nằm trong thư mục của manifest.
 def resolve_sample(base, value):
     path = (base / value).resolve()
     if not path.is_relative_to(base.resolve()):
@@ -59,14 +67,18 @@ def resolve_sample(base, value):
     return path
 
 
+# Xác định đường truyền mask ẩn từ config; cả ba config chính đều bật.
 def _uses_occluded_mask_input(config):
     return config.get("pipeline_mode") in ("oracle_mask", "sd15_direct") or bool(config.get("use_occluded_mask_input"))
 
 
+# Nối dữ liệu và backend cho một vật thể; trả kết quả và cờ cho biết có dùng lại artefact hay
+# không.
 def run_one(record, sample_root, output_root, config, backend, profile):
     oracle_mode = _uses_occluded_mask_input(config)
     image_path = resolve_sample(sample_root, record["image"])
     visible_path = resolve_sample(sample_root, record["visible_mask"])
+    # Không resume nếu ảnh, mask, record hoặc cấu hình profile đã thay đổi.
     sig_payload = dict(profile=profile, input=sha(image_path), visible=sha(visible_path), record=record)
     occluded_path = None
     if oracle_mode:
@@ -78,6 +90,7 @@ def run_one(record, sample_root, output_root, config, backend, profile):
             sig_payload["occluded_from_amodal"] = sha(gt_for_input)
     signature = hashlib.sha256(json.dumps(sig_payload, sort_keys=True).encode()).hexdigest()
     job = output_root / record["sample_id"] / signature[:12]
+    # Chỉ dùng lại mẫu đã hoàn thành khi toàn bộ artefact liên quan còn đúng checksum.
     if (job / "result.json").is_file():
         existing = json.loads((job / "result.json").read_text())
         artifacts = existing.get("artifact_sha256", {})
@@ -131,6 +144,8 @@ def run_one(record, sample_root, output_root, config, backend, profile):
         if gt.shape != visible.shape:
             raise ValueError("GT dimensions mismatch")
         gt_hidden = gt & ~visible
+        # Chấm mask và RGB visible tại kích thước ảnh gốc; GT ở đây là mask, không phải RGB vùng
+        # ẩn.
         metrics = dict(
             amodal_iou=iou(amodal, gt),
             hidden_iou=iou(hidden, gt_hidden),
@@ -181,6 +196,7 @@ def run_one(record, sample_root, output_root, config, backend, profile):
             artifacts += [name for name in ("micro_attributes.json", "basic_reasoning.json", "critic_logs.jsonl",
                                          f"v{config['pipeline_version']}_selection.json")
                           if (job / name).is_file()]
+        # Checksum cho bước resume và chấm lại; result.json được ghi sau ảnh và trace.
         result["artifact_sha256"] = {name: sha(job / name) for name in artifacts}
         (job / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         if (job / "failure.json").exists():

@@ -1,3 +1,4 @@
+# Phạm vi: Ô 3: xác nhận GPU, thư viện và checkpoint có thể truy cập trước khi chạy.
 """Preflight imports, GPU availability, and optional HuggingFace model access."""
 import argparse, importlib, json, os, sys
 from pathlib import Path
@@ -7,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+# Kiểm tra CUDA trước, sau đó import model vendor và xác minh trọng số cần thiết.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--imports-only", action="store_true")

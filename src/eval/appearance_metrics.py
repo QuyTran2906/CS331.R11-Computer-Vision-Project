@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba phiên bản: CLIP logit chấm ảnh hoàn chỉnh; LPIPS/SSIM/PSNR và cosine chỉ kiểm tra
+# phần nhìn thấy.
 """Author protocol: full-canvas RGB masked to black outside the visible region.
 
 These reference metrics measure visible preservation, not hidden RGB accuracy.
@@ -24,6 +26,7 @@ POLICY = {
 _cache: dict = {}
 
 
+# Cache CLIP chấm điểm theo thiết bị; tách với CLIP chọn prompt trong V2/V3.
 def _clip(device: str):
     key = ("clip", device)
     if key not in _cache:
@@ -36,6 +39,7 @@ def _clip(device: str):
     return _cache[key]
 
 
+# Chuẩn hóa kiểu kết quả từ các API trích đặc trưng CLIP.
 def _as_tensor(features):
     import torch
 
@@ -46,6 +50,7 @@ def _as_tensor(features):
     return pooled if pooled is not None else features.last_hidden_state[:, 0]
 
 
+# Dùng logit ảnh–nhãn làm chỉ dấu phù hợp ngữ nghĩa của ảnh hoàn chỉnh.
 def clip_score(image: np.ndarray, text: str, device: str = "cuda") -> float:
     import torch
 
@@ -55,6 +60,7 @@ def clip_score(image: np.ndarray, text: str, device: str = "cuda") -> float:
         return float(model(**inputs).logits_per_image.item())
 
 
+# Tính cosine giữa embedding ảnh gốc và ảnh kết quả sau khi che phần không đánh giá.
 def clip_feature_similarity(img_a: np.ndarray, img_b: np.ndarray, device: str = "cuda") -> float:
     import torch
 
@@ -65,6 +71,7 @@ def clip_feature_similarity(img_a: np.ndarray, img_b: np.ndarray, device: str = 
     return float(torch.nn.functional.cosine_similarity(feat_a, feat_b, dim=1).item())
 
 
+# Tính khoảng cách cảm nhận bằng LPIPS; ảnh đã được giới hạn vào phần visible.
 def lpips_distance(img_a: np.ndarray, img_b: np.ndarray, device: str = "cuda") -> float:
     import torch
 
@@ -74,6 +81,7 @@ def lpips_distance(img_a: np.ndarray, img_b: np.ndarray, device: str = "cuda") -
 
         _cache[key] = lpips.LPIPS(net="alex").to(device).eval()
 
+    # Đổi RGB H×W×C sang batch NCHW và miền giá trị LPIPS cần.
     def to_tensor(img: np.ndarray):
         return torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).to(device).float() / 127.5 - 1.0
 
@@ -81,17 +89,20 @@ def lpips_distance(img_a: np.ndarray, img_b: np.ndarray, device: str = "cuda") -
         return float(_cache[key](to_tensor(img_a), to_tensor(img_b)).item())
 
 
+# Đo sai khác pixel trên ảnh đã mask theo protocol.
 def psnr_score(img_a: np.ndarray, img_b: np.ndarray) -> float:
     mse = float(np.mean((img_a.astype(np.float64) - img_b.astype(np.float64)) ** 2))
     return 100.0 if mse == 0 else float(20 * np.log10(255.0 / np.sqrt(mse)))
 
 
+# Đo tương đồng cấu trúc của ảnh đã mask theo protocol.
 def ssim_score(img_a: np.ndarray, img_b: np.ndarray) -> float:
     from skimage.metrics import structural_similarity
 
     return float(structural_similarity(img_a, img_b, channel_axis=2, data_range=255))
 
 
+# Tách đường CLIP ảnh hoàn chỉnh khỏi các metric so sánh RGB trên vùng quan sát.
 def compute_visible_appearance_metrics(
     image: np.ndarray,
     completed_rgb: np.ndarray,

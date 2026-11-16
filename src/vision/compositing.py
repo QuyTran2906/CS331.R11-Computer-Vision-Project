@@ -1,3 +1,4 @@
+# Phạm vi: Cả ba dùng phép ghép biên và xuất RGBA; khóa tần số theo prior chỉ dùng cho V2/V3.
 """Frequency-separated prior locking, adaptive boundary blending, and critic framing."""
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ from src.vision.image_ops import binary_dilate, gaussian_blur_rgb, resize_array
 from src.vision.roi import extract_square_roi, mask_bbox
 
 
+# Đóng gói RGB với alpha theo mask amodal cho sẵn.
 def finalize_rgba(rgb: np.ndarray, amodal_mask: np.ndarray, h: int, w: int) -> np.ndarray:
     """Pack the completed RGB and the amodal mask (as alpha 0/255) into an HxWx4 uint8 image."""
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
@@ -15,6 +17,7 @@ def finalize_rgba(rgb: np.ndarray, amodal_mask: np.ndarray, h: int, w: int) -> n
     return rgba
 
 
+# Giữ màu/cấu trúc biến đổi chậm của seed, nhận chi tiết tần số cao từ ảnh sinh.
 def lock_low_frequency_to_prior(
     seed_rgb: np.ndarray,
     sd_rgb: np.ndarray,
@@ -43,6 +46,7 @@ def lock_low_frequency_to_prior(
     return out
 
 
+# Trộn vùng tiếp giáp để giảm đứt nét ở ranh giới phần thấy–phần sinh.
 def adaptive_seam_blend(
     original_image: np.ndarray,
     synthesized_image: np.ndarray,

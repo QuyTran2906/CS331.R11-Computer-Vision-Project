@@ -1,3 +1,5 @@
+# Phạm vi: Dùng chung khi tạo crop vuông, khôi phục tọa độ ảnh gốc và xuất ảnh so sánh; padding
+# giữ tỷ lệ vật thể.
 """Context-aware square ROI cropping and exact canvas back-projection."""
 from __future__ import annotations
 
@@ -6,6 +8,7 @@ import numpy as np
 from src.vision.image_ops import resize_array
 
 
+# Lấy khung bao nhỏ nhất của foreground; trả biên theo thứ tự y trước, x sau.
 def mask_bbox(mask: np.ndarray) -> tuple[int, int, int, int]:
     """Return `(y1, x1, y2, x2)` inclusive bounding box of a non-empty mask."""
     ys, xs = np.where(mask)
@@ -14,6 +17,7 @@ def mask_bbox(mask: np.ndarray) -> tuple[int, int, int, int]:
     return int(ys.min()), int(xs.min()), int(ys.max()), int(xs.max())
 
 
+# Chọn crop vuông quanh vật thể với ngữ cảnh và quy tắc cho vật thể lớn.
 def compute_square_roi(
     focus_mask: np.ndarray,
     image_shape: tuple[int, ...],
@@ -57,6 +61,7 @@ def compute_square_roi(
     return {"y0": int(y0), "x0": int(x0), "size": int(size), "is_full_frame": False}
 
 
+# Cắt đúng tọa độ và đệm phần ROI nằm ngoài canvas.
 def extract_square_roi(
     array: np.ndarray,
     roi: dict[str, int | bool],
@@ -86,6 +91,7 @@ def extract_square_roi(
     return out
 
 
+# Dán lát ROI sau xử lý về ảnh gốc, chỉ ghi phần tọa độ giao nhau.
 def paste_square_roi(
     canvas: np.ndarray,
     roi_patch: np.ndarray,

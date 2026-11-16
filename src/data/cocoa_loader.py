@@ -1,3 +1,5 @@
+# Phạm vi: Cả V1/V2/V3: chuyển annotation COCO-A thành danh sách vật thể cùng ảnh và ba mask.
+# Không sinh RGB hoặc nạp GPU.
 """COCO-A image annotations -> individual objects. No GPU/model dependencies."""
 from dataclasses import dataclass
 import json
@@ -7,6 +9,7 @@ import numpy as np
 from pycocotools import mask as coco_mask
 
 
+# Giải mã polygon hoặc RLE về mask bool H×W; dữ liệu trống thành mask rỗng.
 def decode_mask(value, height, width):
     if value is None or (isinstance(value, list) and not value):
         return np.zeros((height, width), dtype=bool)
@@ -29,6 +32,7 @@ def decode_mask(value, height, width):
     return result.astype(bool)
 
 
+# Một vật thể trong một annotation; giữ ảnh gốc và chỉ số vùng để truy lại mẫu.
 @dataclass
 class Target:
     split: str
@@ -40,10 +44,12 @@ class Target:
     height: int
     region: dict
 
+    # Tạo ID ổn định để nối manifest, thư mục ảnh và kết quả.
     @property
     def sample_id(self):
         return f"{self.split}_{self.image_id:012d}_a{self.annotation_id}_r{self.region_index:03d}"
 
+    # Kiểm tra visible nằm trong amodal; hidden = amodal − visible.
     def masks(self):
         amodal = decode_mask(self.region["segmentation"], self.height, self.width)
         stored = self.region.get("visible_mask")
@@ -63,6 +69,7 @@ class Target:
         return visible, amodal, hidden
 
 
+# Mở annotation theo split, lập chỉ mục theo image ID.
 class CocoaDataset:
     def __init__(self, root, split):
         self.root = Path(root)
@@ -76,6 +83,7 @@ class CocoaDataset:
         if len(self.images) != len(images):
             raise ValueError(f"Duplicate image IDs in {split}")
 
+    # Duyệt từng vật thể trong thứ tự cố định để seed có thể tái lập danh sách.
     def targets(self):
         for annotation in sorted(self.data["annotations"], key=lambda row: (row["image_id"], row["id"])):
             image = self.images[annotation["image_id"]]
@@ -95,6 +103,7 @@ import random
 from PIL import Image, ImageDraw
 
 
+# Đọc theo khối để tính checksum mà không nạp cả ảnh vào RAM.
 def sha(path):
     h = hashlib.sha256()
     with path.open("rb") as stream:
@@ -103,6 +112,7 @@ def sha(path):
     return h.hexdigest()
 
 
+# Đối chiếu tệp ảnh với checksum đã ghi trong manifest dữ liệu.
 def check_hash(task):
     path, expected = task
     if sha(path) != expected:
@@ -110,6 +120,7 @@ def check_hash(task):
     return expected
 
 
+# Kiểm tra split, ảnh thiếu và trùng ID/hash; kiểm tra bytes thật khi bật verify_hashes.
 def audit(root, verify_hashes):
     report, ids, hashes, tasks = {}, {}, {}, []
     for split in ("train", "dev", "test"):
@@ -149,12 +160,14 @@ def audit(root, verify_hashes):
                 image_bytes_verified=verify_hashes)
 
 
+# Tô mask để nhìn nhanh vùng được chú thích; không sửa ảnh đầu vào của model.
 def overlay(image, mask, color):
     result = image.copy()
     result[mask] = (0.55 * result[mask] + 0.45 * np.asarray(color)).astype(np.uint8)
     return result
 
 
+# Lọc theo kích thước và tỷ lệ che, rồi lưu RGB/mask cùng hệ tọa độ và manifest.
 def export_samples(ds, cfg, out):
     records, panels, used = [], [], set()
     rejected, invalid_examples = Counter(), []

@@ -1,3 +1,5 @@
+# Phạm vi: V2/V3: CLIP đối chiếu các prompt với crop vật thể nhìn thấy; đây là lựa chọn prompt,
+# không phải metric CLIP cuối.
 """Verify text guidance against the observed object crop."""
 from __future__ import annotations
 import numpy as np
@@ -19,6 +21,8 @@ FALLBACK_PROMPT_CANDIDATES = [
 ]
 
 
+# So prompt Qwen, tên vật thể và prompt dự phòng trên cùng crop visible; trả prompt cùng điểm kiểm
+# tra.
 def verify_prompt_with_clip(
     clip_model,
     clip_proc,

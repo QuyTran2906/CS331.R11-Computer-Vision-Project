@@ -1,3 +1,5 @@
+# Phạm vi: Ô 8: đối chiếu cùng mẫu, mask và protocol rồi xuất bảng/ảnh cho V1/V2/V3 và V3 tắt
+# adapter nếu có.
 """Report comparable SD1.5 experiments on a fixed manifest."""
 import argparse
 from collections import Counter
@@ -21,6 +23,7 @@ ROLES = {"v1": (1, "sd15_direct"), "v2": (2, "oracle_mask"),
 FLAGS = ("use_micro_attributes", "use_ip_adapter", "use_latent_blending", "use_strict_critic")
 
 
+# Yêu cầu cùng checkpoint, seed, scheduler và mask; phép ablation chỉ được đổi cờ IP-Adapter.
 def check_configs(configs):
     for key, cfg in configs.items():
         if (cfg.get("pipeline_version"), cfg.get("pipeline_mode")) != ROLES[key]:
@@ -45,6 +48,7 @@ def check_configs(configs):
         raise ValueError("V2 and V3 must share hyperparameters apart from the proposed feature flags")
 
 
+# Tách tỷ lệ PASS theo lượt và theo mẫu; V1 để trống vì không dùng critic.
 def critic_summary(selected):
     counts, invalid = Counter(), 0
     reviewed = passed = 0
@@ -64,6 +68,7 @@ def critic_summary(selected):
                 attempt_reject_rate=counts["REJECT"] / judged if judged else None)
 
 
+# Kiểm tra hồ sơ đầu vào, ghép metric từng vật thể, xuất CSV/JSON và lưới ảnh.
 def compare_versions(records, profiles, output, fid_reference=None, device="cuda"):
     if not records or len({r["sample_id"] for r in records}) != len(records):
         raise ValueError("Expected a nonempty manifest with unique sample IDs")
@@ -130,6 +135,7 @@ def compare_versions(records, profiles, output, fid_reference=None, device="cuda
     return summary
 
 
+# Đọc đường dẫn manifest, profile và thư mục ảnh sạch nếu bật FID.
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)

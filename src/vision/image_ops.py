@@ -1,3 +1,5 @@
+# Phạm vi: Tiện ích ảnh/mask dùng chung: resize, co/giãn biên, làm mờ, và điền từ pixel lân cận
+# cho prior.
 """Low-level image morphology, resizing, hole filling, and filtering primitives."""
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ except ImportError:  # pragma: no cover - local CPU data venv fallback
     ndi = None
 
 
+# Resize theo kiểu dữ liệu; dùng nearest cho mask để không tạo giá trị biên trung gian.
 def resize_array(array: np.ndarray, size_hw: tuple[int, int], mode: str = "linear") -> np.ndarray:
     """Resize a 2D or 3D uint8/float32 array to `(height, width)`."""
     target_h, target_w = int(size_hw[0]), int(size_hw[1])
@@ -57,6 +60,7 @@ def resize_array(array: np.ndarray, size_hw: tuple[int, int], mode: str = "linea
     return np.stack(channels, axis=-1)
 
 
+# Mở rộng mask để tạo dải tiếp giáp hoặc vùng chỉnh sửa.
 def binary_dilate(mask: np.ndarray, radius: int) -> np.ndarray:
     mask_bool = np.asarray(mask, dtype=bool)
     if radius <= 0 or not mask_bool.any():
@@ -69,6 +73,7 @@ def binary_dilate(mask: np.ndarray, radius: int) -> np.ndarray:
     return np.asarray(img.filter(ImageFilter.MaxFilter(k))) > 127
 
 
+# Co mask để lấy lõi ổn định cách mép.
 def binary_erode(mask: np.ndarray, radius: int) -> np.ndarray:
     mask_bool = np.asarray(mask, dtype=bool)
     if radius <= 0 or not mask_bool.any():
@@ -83,11 +88,13 @@ def binary_erode(mask: np.ndarray, radius: int) -> np.ndarray:
     return eroded[r:-r, r:-r] > 127
 
 
+# Lấy đường viền mask để đánh dấu mục tiêu trong crop ngữ cảnh.
 def mask_outline(mask: np.ndarray, thickness: int = 2) -> np.ndarray:
     m = np.asarray(mask, dtype=bool)
     return binary_dilate(m, max(1, thickness)) & (~m)
 
 
+# Lan giá trị từ pixel hợp lệ gần nhất để tạo nền khởi tạo.
 def nearest_foreground_fill(rgb: np.ndarray, known_mask: np.ndarray) -> np.ndarray:
     """Extrapolate `rgb` from `known_mask` to `~known_mask` via nearest pixel."""
     known = np.asarray(known_mask, dtype=bool)
@@ -121,6 +128,7 @@ def nearest_foreground_fill(rgb: np.ndarray, known_mask: np.ndarray) -> np.ndarr
     return out
 
 
+# Điền lỗ nhỏ theo màu lân cận trong bước chuẩn bị prior, trước SD1.5.
 def inpaint_holes(rgb: np.ndarray, hole_mask: np.ndarray, radius: int = 7) -> np.ndarray:
     """Inpaint `hole_mask` smoothly from surrounding valid pixels."""
     holes = np.asarray(hole_mask, dtype=bool)
@@ -135,6 +143,7 @@ def inpaint_holes(rgb: np.ndarray, hole_mask: np.ndarray, radius: int = 7) -> np
     return out
 
 
+# Làm mờ RGB để tách thành phần màu và cấu trúc tần số thấp.
 def gaussian_blur_rgb(rgb: np.ndarray, sigma: float = 4.0) -> np.ndarray:
     """Return float32 Gaussian-blurred RGB image."""
     if cv2 is not None:

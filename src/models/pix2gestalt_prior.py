@@ -1,3 +1,5 @@
+# Phạm vi: V2/V3: Pix2Gestalt sinh prior RGB 2D, CarveKit tách alpha tin cậy. Biên đầu ra vẫn căn
+# theo mask cho sẵn.
 """Pix2Gestalt latent-diffusion loader + CarveKit matting interface (strict: fail loudly, never fall back)."""
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ VENDOR_PATHS = [
 ]
 
 
+# Thêm đường dẫn code Pix2Gestalt phụ thuộc trước khi import.
 def ensure_vendor_paths() -> None:
     """Expose the cloned Pix2Gestalt / taming-transformers / CLIP repos on `sys.path`."""
     for path in VENDOR_PATHS:
@@ -24,6 +27,7 @@ def ensure_vendor_paths() -> None:
             sys.path.insert(0, str(path))
 
 
+# Lấy hàm inference từ code vendor khi cần.
 def load_run_pix2gestalt():
     """Return Pix2Gestalt's official `run_pix2gestalt(model, device, input_im, visible_mask, n_samples, ...)`."""
     ensure_vendor_paths()
@@ -32,6 +36,7 @@ def load_run_pix2gestalt():
     return run_pix2gestalt
 
 
+# Áp dụng trọng số EMA cho inference trước khi giải phóng bản lưu EMA.
 def apply_inference_ema(model):
     """Keep the weights used by upstream ema_scope without GPU backup copies.
 
@@ -46,9 +51,11 @@ def apply_inference_ema(model):
     return model
 
 
+# Gói generator và bộ tách alpha CarveKit để memory manager chuyển thiết bị cùng nhau.
 class Pix2GestaltModel:
     """Holds the Pix2Gestalt LDM (`model`) and the CarveKit background-matting callable (`carvekit_interface`)."""
 
+    # Dựng model từ YAML/checkpoint, chuẩn bị CarveKit và chế độ inference.
     def __init__(self, ckpt_path: Path = DEFAULT_CKPT, config_path: Path = DEFAULT_CONFIG, device: str = "cuda"):
         import torch
 
@@ -94,6 +101,7 @@ class Pix2GestaltModel:
         print("[Models] Pix2Gestalt + CarveKit ready.", flush=True)
 
 
+    # Đồng bộ vị trí trọng số và thiết bị mà hàm inference sẽ dùng.
     def to(self, device):
         self.model.to(device)
         self.device = str(device)
@@ -109,6 +117,7 @@ from src.vision.image_ops import resize_array
 from src.vision.roi import compute_square_roi, extract_square_roi, paste_square_roi
 
 
+# Cắt cùng ROI từ RGB và visible mask; resize mask bằng nội suy nearest để giữ biên.
 def prepare_pix2gestalt_roi_inputs(
     image: np.ndarray,
     visible_mask: np.ndarray,
@@ -131,6 +140,7 @@ def prepare_pix2gestalt_roi_inputs(
     return resized_img, rgb_vis_256
 
 
+# Sinh RGB và alpha trong ROI 256×256, rồi dán về canvas gốc để chuẩn bị seed.
 def synthesize_amodal_prior(
     models, config,
     image: np.ndarray,

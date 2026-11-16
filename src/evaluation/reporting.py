@@ -1,3 +1,5 @@
+# Phạm vi: Cả ba phiên bản: ghi JSON/CSV và thống kê theo lớp và mức che; mẫu thiếu hoặc lỗi không
+# bị tính thành điểm 0.
 """Atomic JSON and per-object macro summaries; missing scores never become zeros."""
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
+# Ghi vào file tạm rồi thay thế để tránh JSON dang dở khi bị ngắt.
 def write_json(path, value):
     path = Path(path)
     partial = path.with_suffix(path.suffix + ".part")
@@ -17,6 +20,7 @@ def write_json(path, value):
     os.replace(partial, path)
 
 
+# Thống kê trên các điểm hợp lệ của mẫu đã hoàn thành.
 def aggregate(rows):
     successful = [r for r in rows if r.get("status") == "completed"]
     names = sorted({k for r in successful for k in r.get("metrics", {})})
@@ -31,6 +35,7 @@ def aggregate(rows):
                 missing=sum(r.get("status") == "missing" for r in rows), metrics=metrics)
 
 
+# Xuất điểm từng mẫu, tổng hợp và phân nhóm theo lớp/mức che.
 def write_reports(directory, rows, metadata=None):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -54,6 +59,7 @@ def write_reports(directory, rows, metadata=None):
     return report
 
 
+# Đưa tỷ lệ che liên tục vào nhóm nhẹ, vừa hoặc nặng để đối chiếu.
 def occlusion_bin(ratio):
     if ratio is None:
         return "unknown"

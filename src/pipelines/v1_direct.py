@@ -1,3 +1,5 @@
+# Phạm vi: Chỉ V1: SD1.5 inpaint một lượt với prompt cố định. Không nạp Pix2Gestalt, Qwen, CLIP
+# hay adapter.
 """Single-pass inpainting with a fixed prompt and pixel-exact visible preservation."""
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ DEFAULT_PROMPT = (
 )
 
 
+# Tạo seed nền trắng, chép phần thấy và tô xám phần ẩn. Mask inpaint mở nhẹ quanh mép để nối màu.
 def prepare_direct_inputs(image, visible_mask, occluded_mask):
     """Same ROI/mask geometry as oracle refinement, without any appearance prior."""
     vis = np.asarray(visible_mask, dtype=bool)
@@ -46,11 +49,13 @@ def prepare_direct_inputs(image, visible_mask, occluded_mask):
     return canvas, vis, occ, amodal, roi, inpaint_region
 
 
+# Chứa thao tác inpaint một lượt và lưu thông số, không gọi critic.
 class DirectInpaintCompleter:
     baseline_name = "Direct inpainting"
     settings_filename = "inpaint_settings.json"
     timing_key = "inpaint_seconds"
 
+    # Đọc và kiểm tra prompt cố định, strength, guidance và số bước.
     def __init__(self, models, config):
         self.models, self.config = models, config
         if config.get("text_query_policy", "empty") != "empty" or config.get("enable_critic", False):
@@ -64,6 +69,7 @@ class DirectInpaintCompleter:
         if not 0.16 <= self.strength <= 1 or self.steps < 1 or self.guidance < 0:
             raise ValueError("Invalid direct inpainting settings")
 
+    # Sinh RGB từ seed; bước hoàn tất của V1 ghép lại đúng pixel nhìn thấy.
     def complete(self, image, visible_mask, occluded_mask, job_dir=None):
         if occluded_mask is None:
             raise ValueError(f"{self.baseline_name} requires an input hidden mask")
@@ -113,6 +119,7 @@ class DirectInpaintCompleter:
                                 total_seconds=round(time.perf_counter() - started, 3)))
 
 
+# Bảo đảm baseline dùng đúng SD1.5/DDIM và không bật các cải tiến của V2/V3.
 def validate_sd15_direct(config):
     if config.get("inpainting_model_id") != SD15_INPAINTING or config.get("refinement_scheduler") != "ddim":
         raise ValueError("SD1.5 Direct requires the SD1.5 inpainting checkpoint and DDIM, matching V2")
@@ -122,22 +129,27 @@ def validate_sd15_direct(config):
         raise ValueError("SD1.5 Direct cannot enable extra conditioning features")
 
 
+# Đặt cấu hình riêng và tên log cho baseline SD1.5.
 class SD15DirectCompleter(DirectInpaintCompleter):
     baseline_name = "SD1.5 Direct"
     settings_filename = "sd15_settings.json"
     timing_key = "sd15_seconds"
 
+    # Xác nhận giới hạn của SD1.5 Direct trước khi khởi tạo lớp dùng chung.
     def __init__(self, models, config):
         validate_sd15_direct(config)
         super().__init__(models, config)
 
+    # Giữ kết quả chung và thêm định danh scheduler vào trace.
     def complete(self, *args, **kwargs):
         result = super().complete(*args, **kwargs)
         result["_trace"]["refinement_scheduler"] = "DDIMScheduler"
         return result
 
 
+# Hoàn tất ảnh baseline và ghi phiên bản vào trace.
 class V1Direct(SD15DirectCompleter):
+    # Chép lại đúng RGB visible sau khi ghép biên, để so sánh trên vùng quan sát.
     def complete(self, image, visible_mask, occluded_mask, job_dir=None):
         result = super().complete(image, visible_mask, occluded_mask, job_dir=job_dir)
         visible = np.asarray(visible_mask, dtype=bool)
