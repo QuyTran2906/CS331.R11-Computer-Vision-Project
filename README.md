@@ -1,82 +1,28 @@
-# CS331 — Open-World Amodal Appearance Completion
+# CS331 — Amodal Appearance Completion trên COCO-A
 
-Đồ án khôi phục hình dạng và diện mạo 2D của vật thể bị che khuất trong ảnh tĩnh (Training-free Open-World Amodal Appearance Completion), đánh giá trên tập dữ liệu COCO-A.
+Ba phiên bản nhận cùng ảnh RGB, visible mask và mask vùng khuất cho sẵn. Chúng
+dùng chung Stable Diffusion 1.5 Inpainting, DDIM và seed 42. Mục tiêu là sinh
+diện mạo hợp lý trong vùng khuất; hình dạng đầu ra được cố định bởi mask.
 
-## Chế độ thực nghiệm
+| Phiên bản | Cấu hình | Luồng |
+| --- | --- | --- |
+| V1 Direct | `configs/v1_sd15_direct.json` | Prompt cố định, một lượt inpainting, giữ nguyên pixel nhìn thấy |
+| V2 Pipeline | `configs/v2_sd15_pipeline.json` | Qwen cơ bản → Pix2Gestalt/CarveKit → CLIP → tinh chỉnh SD1.5 → critic tổng hợp |
+| V3 Proposed | `configs/v3_sd15_proposed.json` | Qwen micro-attributes, IP-Adapter Plus, latent blending và strict critic |
+| V3 no IP | `configs/v3_ablation_no_ip.json` | V3 chỉ tắt IP-Adapter |
 
-Dự án hỗ trợ 3 chế độ thực thi trên GPU Colab:
-- **`configs/oracle_mask.json` (`pipeline_mode = "oracle_mask"`)**: Nhận thẳng mask phần bị che từ input (`gt_hidden` / `occluded_mask`) + khôi phục diện mạo vùng khuất.
-- **`configs/improved.json` (`pipeline_mode = "improved"`)**: Tự dự đoán cả mask vùng bị che lẫn diện mạo từ `image.png` và `visible.png`.
-- **`configs/sd2_direct.json` (`pipeline_mode = "sd2_direct"`)**: Baseline inpainting trực tiếp, cùng mask có sẵn, prompt cố định và một pass SD2; chỉ nạp model SD2 khi sinh ảnh.
+Mở [notebook Colab](notebooks/Amodal_Completion_Colab.ipynb) và chạy **8 ô theo
+thứ tự**. Ô 4 mặc định `dev50`; đặt `SMOKE_LIMIT = 3` để kiểm tra nhanh. Ô 7 có
+cờ `RUN_NO_IP_ABLATION`. Ô 8 xuất bảng CSV/JSON và lưới ảnh sáu cột vào Drive.
+Khi đã chốt cấu hình trên dev, dùng `BATCH = "test400"`, `FINAL_TEST = True`.
 
-**Chạy baseline so với kết quả chính đã lưu:** notebook có ô **12–15** để chuẩn bị/chạy/chấm/so sánh dev50 rồi test400. Phiên Colab mới chạy **1 → 2 → 3B → 12–15**; ô 3B bỏ tải checkpoint Pix2Gestalt. Profile chính mặc định `a0ab44af3e253863`, không sinh lại 400 kết quả cũ. Xem [docs/BASELINE.md](docs/BASELINE.md).
+- [Cài đặt Colab](docs/COLAB_SETUP.md)
+- [Luồng xử lý và phân công module](docs/PIPELINE.md)
+- [V3 và ablation](docs/PIPELINE_V3.md)
+- [Protocol đánh giá](docs/EVALUATION.md)
+- [Cấu hình SD2 lịch sử](archive_sd2/README.md)
 
-**Pipeline V2 (SD1.5 + IP-Adapter Plus):** `oracle_mask_v2.json` / `improved_v2.json` bật micro-attributes, Plus image conditioning, latent blending và strict critic. Có baseline mới `sd15_direct.json` và ablation `oracle_mask_v2_no_ip.json`. SD2 Direct và các config V1 giữ nguyên. Colab: **1 → 2 → 3 → 16–19**, mặc định thử 3 mẫu dev rồi tăng `V2_LIMIT=50`; ô 20 tùy chọn ablation. [Hướng dẫn V2](docs/PIPELINE_V2.md).
-
-Xem `docs/COLAB_SETUP.md` để chạy trên Google Colab với notebook `notebooks/Amodal_Completion_Colab.ipynb`. Chi tiết kiến trúc từng bước xem tại `docs/PIPELINE.md`.
-
-## Metric và batch lớn
-
-Sau dev50, đánh giá cuối dùng **test400**: notebook mới mặc định ô 9 là `BATCH="test400"`, `FINAL_TEST=True`, rồi chạy ô 10–11. Cấu hình khôi phục giữ nguyên. Báo cáo mới tách thư mục theo hash subset để không ghi đè dev50. Xem lệnh đầy đủ trong [docs/EVALUATION.md](docs/EVALUATION.md).
-
-Đã có bước `scripts/evaluate_runs.py` chấm lại ảnh đã lưu, không chạy lại generation: CLIP logit, LPIPS AlexNet, CLIP image-feature cosine, SSIM và PSNR theo protocol visible-mask-over-black của code tác giả. Kết quả gồm CSV từng object, mean/std/n theo class và mức che; lỗi/missing được ghi riêng. Những metric so với input chỉ đo bảo toàn visible RGB, không đo độ chính xác RGB của vùng ẩn.
-
-Notebook có ô 8 chấm profile cũ và ô 9–11 chuẩn bị/chạy/chấm batch `dev50` hoặc final `test200`, có preflight và backup/resume. Xem [docs/EVALUATION.md](docs/EVALUATION.md) trước khi chạy đánh giá cuối.
-
-## Cấu trúc thư mục
-
-```text
-├── configs/
-│   ├── data.json                  # Quy tắc chọn mẫu COCO-A smoke test
-│   ├── improved.json              # Cấu hình chế độ Blind Improved (tự đoán mask + khôi phục RGB)
-│   └── oracle_mask.json           # Cấu hình chế độ Oracle-Mask (nhận thẳng mask phần bị che)
-├── src/
-│   ├── data/
-│   │   └── cocoa.py               # Bộ đọc annotation COCO-A, giải mã polygon/RLE
-│   ├── models/
-│   │   ├── pix2gestalt.py         # Nạp checkpoint Pix2Gestalt LDM & CarveKit matting
-│   │   ├── qwen_vl.py             # Nạp Qwen3-VL-4B-Instruct (FP16)
-│   │   └── registry.py            # FoundationModels: quản lý & chia sẻ trọng số dùng chung
-│   ├── vision/
-│   │   ├── image_ops.py           # Hình thái học mask, lọc liên thông, Telea inpaint, Gaussian blur
-│   │   ├── roi.py                 # Tính toán, trích xuất và dán lại cửa sổ vuông ROI
-│   │   └── compositing.py         # Khóa tần số thấp, hòa trộn biên thích nghi, đóng gói RGBA
-│   ├── stages/
-│   │   ├── shape_consensus.py     # Multi-sample Pix2Gestalt + CarveKit smooth alpha consensus
-│   │   ├── appearance_prior.py    # Khởi tạo màu/kết cấu vùng khuất (Blind & Oracle-Mask)
-│   │   ├── vlm_guidance.py        # Qwen3-VL visual prompting, CLIP verification & Critic chấm điểm
-│   │   └── sd2_refiner.py         # Tinh chỉnh chi tiết bằng Stable Diffusion 2 Inpainting trên ROI 512x512
-│   ├── pipelines/
-│   │   ├── backend.py             # AmodalBackend: bộ điều phối chung
-│   │   ├── improved_completer.py  # Điều phối luồng Blind Improved
-│   │   └── oracle_completer.py    # Điều phối luồng Oracle-Mask
-│   └── evaluation/
-│       ├── metrics.py             # Amodal/Hidden IoU, SeamMAE, ColorHistSim
-│       ├── appearance_metrics.py  # CLIP score, LPIPS, Feature Similarity, SSIM
-│       ├── runner.py              # Thực thi từng mẫu, kiểm tra resume, lưu artifact & preview
-│       └── comparison.py          # Khôi phục backup từ Drive & xuất bảng/lưới so sánh
-├── scripts/
-│   ├── prepare_data.py            # Kiểm tra toàn vẹn dataset và xuất mẫu thử
-│   ├── setup_colab.py             # Cài đặt môi trường GPU độc lập trên Colab
-│   ├── check_environment.py       # Kiểm tra thư viện, GPU và kết nối model
-│   ├── download_weights.py        # Tải checkpoint Pix2Gestalt
-│   ├── run_experiment.py          # Entry point chạy thực nghiệm và tự động backup
-│   ├── compare_runs.py            # Entry point đối chiếu định lượng & trực quan giữa các chế độ
-│   ├── build_notebook.py          # Sinh notebook Colab
-│   └── package_project.py         # Đóng gói mã nguồn và dataset
-└── tests/                         # Bộ unit test kiểm chứng toàn bộ các module
-```
-
-## Chạy kiểm thử local trên Windows
-
-```powershell
-python -m venv .venv-data
-.\.venv-data\Scripts\python.exe -m pip install -r requirements-data.txt
-.\.venv-data\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv-data\Scripts\python.exe scripts/prepare_data.py --verify-hashes
-```
-
-## Nguồn tham khảo (Acknowledgements)
-
-- Dữ liệu & công cụ giải mã COCO-A: [Semantic Amodal Segmentation (amodalAPI)](https://github.com/yzhuuu/amodalAPI).
-- Mô hình nền tảng & ý tưởng pipeline tham khảo từ [Pix2Gestalt](https://github.com/cvlab-columbia/pix2gestalt) và [SCAmodal](https://github.com/dpduy123/SCAmodal).
+COCO-A không cấp RGB thật của phần khuất. CLIP, SeamMAE và histogram màu là
+chỉ số gián tiếp; PSNR, SSIM, LPIPS và Feature Similarity chỉ kiểm tra phần
+nhìn thấy. Những kết quả cũ trên Drive vẫn giữ nguyên nhưng không thuộc bảng
+ba phiên bản mới.

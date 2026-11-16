@@ -38,7 +38,7 @@ def main():
     if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, default=ROOT / "outputs/train_smoke/manifest.json")
-    parser.add_argument("--config", type=Path, default=ROOT / "configs/improved.json")
+    parser.add_argument("--config", type=Path, default=ROOT / "configs/v1_sd15_direct.json")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--backup-dir", type=Path)
     parser.add_argument("--backup-every", type=int, default=5)
@@ -48,11 +48,11 @@ def main():
     parser.add_argument("--profile-output", type=Path, help="Write the exact successful profile ID for notebook follow-up cells")
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    if config.get("pipeline_version") == 2:
-        from src.stages.sd2_advanced import validate_v2_config
+    if config.get("pipeline_version") in (2, 3):
+        from src.models.sd15_ip_adapter import validate_v2_config
         validate_v2_config(config)
     elif config.get("pipeline_mode") == "sd15_direct":
-        from src.pipelines.sd15_direct_completer import validate_sd15_direct
+        from src.pipelines.v1_direct import validate_sd15_direct
         validate_sd15_direct(config)
     elif config.get("pipeline_mode") == "sd2_direct":
         if config.get("enable_critic") or config.get("text_query_policy", "empty") != "empty":
@@ -122,7 +122,7 @@ def main():
                         random.seed(config["seed"]); np.random.seed(config["seed"])
                         torch.manual_seed(config["seed"]); torch.cuda.manual_seed_all(config["seed"])
                         result, skipped = run_one(record, args.manifest.resolve().parent, output_root, config, lazy, profile)
-                        if config.get("pipeline_version") == 2:
+                        if config.get("pipeline_version") in (2, 3):
                             from src.evaluation.critic_logs import update_critic_log
                             update_critic_log(output_root, result)
                         results.append(dict(sample_id=record["sample_id"], status="completed", resumed=skipped, metrics=result["metrics"]))

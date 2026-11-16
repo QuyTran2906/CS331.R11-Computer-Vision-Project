@@ -14,7 +14,7 @@ def main():
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     paths = [ROOT / "README.md", ROOT / "requirements-data.txt", ROOT / "requirements-colab.txt", ROOT / ".gitignore"]
-    for folder in ["configs", "src", "scripts", "tests", "docs", "notebooks"]:
+    for folder in ["configs", "src", "scripts", "tests", "docs", "notebooks", "archive_sd2", "archive_sd15"]:
         paths.extend(p for p in (ROOT / folder).rglob("*") if p.is_file() and "__pycache__" not in p.parts)
     with zipfile.ZipFile(dist / "amodal_project.zip", "w", zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(paths):

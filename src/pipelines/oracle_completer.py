@@ -1,7 +1,6 @@
 """Dedicated Mask-Guided (Oracle-Mask) Amodal Appearance Completion pipeline (`pipeline_mode = 'oracle_mask'`)."""
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 import time
@@ -11,10 +10,9 @@ import numpy as np
 from PIL import Image
 
 from src.evaluation.metrics import compute_appearance_coherence_metrics
-from src.models.pix2gestalt import load_run_pix2gestalt
+from src.models.pix2gestalt_prior import synthesize_amodal_prior
 from src.stages.appearance_prior import build_oracle_appearance_seed
 from src.stages.sd2_refiner import refine_exact_mask_sd2_oracle
-from src.stages.shape_consensus import prepare_pix2gestalt_roi_inputs
 from src.stages.vlm_guidance import (
     DEFAULT_NEGATIVE_PROMPT,
     build_oracle_vlm_prompts,
@@ -24,7 +22,6 @@ from src.stages.vlm_guidance import (
     verify_prompt_with_clip,
 )
 from src.vision.compositing import adaptive_seam_blend, compose_cropped_for_critic, finalize_rgba
-from src.vision.roi import compute_square_roi, paste_square_roi
 
 
 class OracleMaskAmodalCompleter:
@@ -35,80 +32,8 @@ class OracleMaskAmodalCompleter:
         self.device = models.device
         self.config = config or {}
 
-    def _synthesize_amodal_prior(
-        self,
-        image: np.ndarray,
-        visible_mask: np.ndarray,
-        amodal_mask: np.ndarray,
-        job_dir: Optional[Path],
-    ) -> dict:
-        """Run 1 fast Pix2Gestalt pass on an `amodal_mask`-centered ROI for 3D RGB reference."""
-        import torch
-
-        predictor = self.models.shape_predictor
-        if predictor is None or predictor.model is None:
-            raise RuntimeError("Strict mode: Pix2Gestalt model is not loaded.")
-
-        run_pix2gestalt = load_run_pix2gestalt()
-
-        roi_scale = float(self.config.get("oracle_roi_scale", 1.65))
-        roi = compute_square_roi(
-            amodal_mask,
-            image.shape,
-            context_scale=roi_scale,
-            min_crop=176,
-            full_frame_threshold=0.88,
-        )
-        resized_img, rgb_vis_256 = prepare_pix2gestalt_roi_inputs(image, visible_mask, roi)
-
-        ddim_steps = int(self.config.get("pix2gestalt_ddim_steps", 75))
-        p2g_kwargs = {
-            "model": predictor.model,
-            "device": predictor.device,
-            "input_im": resized_img,
-            "visible_mask": rgb_vis_256,
-            "n_samples": 1,
-        }
-        try:
-            if "ddim_steps" in inspect.signature(run_pix2gestalt).parameters:
-                p2g_kwargs["ddim_steps"] = ddim_steps
-        except Exception:
-            pass
-
-        print(
-            f"[Oracle-Prior] Pix2Gestalt Amodal-ROI={roi['size']}x{roi['size']} "
-            f"(full_frame={roi['is_full_frame']}, n_samples=1, ddim_steps={ddim_steps})..."
-        )
-        with torch.inference_mode():
-            samples_rgb_256 = run_pix2gestalt(**p2g_kwargs)
-
-        rgb_256 = samples_rgb_256[0]
-        rgba_mat = predictor.carvekit_interface([Image.fromarray(rgb_256)])[0]
-        alpha_256 = np.asarray(rgba_mat)[:, :, 3]
-
-        blank_rgb = np.full_like(image, 255, dtype=np.uint8)
-        blank_alpha = np.zeros(image.shape[:2], dtype=np.float32)
-        p2g_rgb_full = paste_square_roi(blank_rgb, rgb_256, roi, resize_mode="linear")
-        p2g_alpha_full = np.clip(
-            paste_square_roi(blank_alpha, alpha_256.astype(np.float32) / 255.0, roi, resize_mode="linear"),
-            0.0,
-            1.0,
-        )
-
-        if job_dir is not None:
-            Image.fromarray(rgb_256).save(job_dir / "pix2gestalt_rgb_256.png")
-            Image.fromarray(alpha_256).save(job_dir / "carvekit_alpha_256.png")
-            Image.fromarray(amodal_mask.astype(np.uint8) * 255).save(job_dir / "shape_mask_original.png")
-
-        return {
-            "p2g_rgb_full": p2g_rgb_full,
-            "p2g_alpha_full": p2g_alpha_full,
-            "diagnostics": {
-                "mask_source": "input_occluded_mask",
-                "roi": roi,
-                "ddim_steps": ddim_steps,
-            },
-        }
+    def _synthesize_amodal_prior(self, image, visible_mask, amodal_mask, job_dir):
+        return synthesize_amodal_prior(self.models, self.config, image, visible_mask, amodal_mask, job_dir)
 
     def _reason_oracle_aware(
         self,

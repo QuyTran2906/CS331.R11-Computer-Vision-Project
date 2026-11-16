@@ -32,7 +32,7 @@ class LatentCallbackTests(unittest.TestCase):
             text_encoder=None, tokenizer=None, safety_checker=None, feature_extractor=None,
             requires_safety_checker=False).to("cpu")
         pipe.set_progress_bar_config(disable=True)
-        cfg = json.loads((Path(__file__).resolve().parents[1] / "configs/oracle_mask_v2.json").read_text())
+        cfg = json.loads((Path(__file__).resolve().parents[1] / "configs/v3_sd15_proposed.json").read_text())
         cfg["use_ip_adapter"] = False  # no checkpoint download in a unit test
         configure_v2_pipe(pipe, cfg)
         canvas = Image.new("RGB", (32, 32), (120, 90, 60))

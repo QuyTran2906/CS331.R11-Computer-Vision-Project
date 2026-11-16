@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def config():
-    return json.loads((ROOT / "configs/oracle_mask_v2.json").read_text())
+    return json.loads((ROOT / "archive_sd15/configs/oracle_mask_v2.json").read_text())
 
 
 def judgment(score=8, decision="PASS"):
@@ -32,7 +32,7 @@ class V2Tests(unittest.TestCase):
     def test_sd15_baseline_uses_only_inpainting_and_correct_metadata(self):
         from src.pipelines.sd15_direct_completer import SD15DirectCompleter
         from src.evaluation.runner import _uses_occluded_mask_input
-        cfg = json.loads((ROOT / "configs/sd15_direct.json").read_text())
+        cfg = json.loads((ROOT / "archive_sd15/configs/sd15_direct.json").read_text())
         self.assertTrue(_uses_occluded_mask_input(cfg))
         image = np.full((48, 64, 3), 140, np.uint8)
         vis = np.zeros((48, 64), bool)
@@ -49,16 +49,16 @@ class V2Tests(unittest.TestCase):
 
     def test_v1_configs_are_exact_aliases_and_sd2_adapter_is_rejected(self):
         for mode in ("oracle_mask", "improved"):
-            self.assertEqual((ROOT / f"configs/{mode}.json").read_bytes(),
-                             (ROOT / f"configs/{mode}_v1.json").read_bytes())
-            cfg = json.loads((ROOT / f"configs/{mode}_v2.json").read_text())
+            self.assertEqual((ROOT / f"archive_sd2/configs/{mode}.json").read_bytes(),
+                             (ROOT / f"archive_sd2/configs/{mode}_v1.json").read_bytes())
+            cfg = json.loads((ROOT / f"archive_sd15/configs/{mode}_v2.json").read_text())
             validate_v2_config(cfg)
         cfg = config()
         cfg["inpainting_model_id"] = "sd2-community/stable-diffusion-2-inpainting"
         with self.assertRaisesRegex(ValueError, "incompatible with SD2"):
             validate_v2_config(cfg)
         full = config()
-        no_ip = json.loads((ROOT / "configs/oracle_mask_v2_no_ip.json").read_text())
+        no_ip = json.loads((ROOT / "archive_sd15/configs/oracle_mask_v2_no_ip.json").read_text())
         self.assertEqual({key for key in full if full[key] != no_ip[key]}, {"use_ip_adapter"})
         self.assertTrue(full["use_ip_adapter"])
         self.assertEqual(full["ip_adapter_weight_name"], "ip-adapter-plus_sd15.safetensors")
@@ -67,15 +67,15 @@ class V2Tests(unittest.TestCase):
             validate_v2_config(cfg)
 
     def test_micro_json_and_format_repair_do_not_invent_attributes(self):
-        raw = json.dumps(dict(object_name="table", primary_color="dark brown",
-                              material_and_texture="glossy wood grain", completion_description="a wooden table"))
+        raw = json.dumps(dict(object_class="table", primary_color="dark brown", secondary_colors=["black"],
+                              material_and_texture="glossy wood grain", sd_prompt="a wooden table"))
         self.assertEqual(parse_micro_attributes("```json\n" + raw + "\n```")["primary_color"], "dark brown")
-        with patch("src.stages.qwen_prompts.generate_json_response", side_effect=["bad", raw]) as generate:
+        with patch("src.vlm.json_response.generate_json_response", side_effect=["bad", raw]) as generate:
             answer = run_micro_reasoning(None, None, None)
         self.assertTrue(answer["valid_json"])
         self.assertIn("glossy wood grain", answer["sd_prompt"])
         self.assertEqual(generate.call_count, 2)
-        with patch("src.stages.qwen_prompts.generate_json_response", return_value="invalid"):
+        with patch("src.vlm.json_response.generate_json_response", return_value="invalid"):
             fallback = run_micro_reasoning(None, None, None)
         self.assertFalse(fallback["valid_json"])
         self.assertEqual(fallback["primary_color"], "unknown")
@@ -92,7 +92,7 @@ class V2Tests(unittest.TestCase):
             data["structure_continuity"] = bad
             with self.assertRaises(ValueError):
                 parse_strict_critic(json.dumps(data))
-        with patch("src.stages.qwen_prompts.generate_json_response", return_value="PASS"):
+        with patch("src.vlm.json_response.generate_json_response", return_value="PASS"):
             failed = run_strict_critic(None, [], "table", 7)
         self.assertFalse(failed["accepted"])
         self.assertIsNone(failed["score"])

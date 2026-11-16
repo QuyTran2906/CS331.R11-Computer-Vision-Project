@@ -4,7 +4,7 @@ import shutil
 ROOT=Path(__file__).resolve().parents[1]
 
 def main():
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, snapshot_download
     folder=ROOT/"ckpt"
     folder.mkdir(exist_ok=True)
     target=folder/"epoch=000005.ckpt"
@@ -16,6 +16,16 @@ def main():
     if target.stat().st_size<1024**3:
         raise RuntimeError("Checkpoint too small; may be incomplete or a Git LFS pointer")
     print("Pix2Gestalt checkpoint:",target.stat().st_size,"bytes")
-    print("Qwen, CLIP, SD2 and CarveKit weights download on first model initialization.")
+    for repo, includes, excludes in (
+        ("Qwen/Qwen3-VL-4B-Instruct", ["*.json", "*.txt", "*.jinja", "*.safetensors"], []),
+        ("stable-diffusion-v1-5/stable-diffusion-inpainting",
+         ["model_index.json", "unet/*", "vae/*", "text_encoder/*", "tokenizer/*",
+          "scheduler/*", "feature_extractor/*"], ["*.fp16.*", "*.onnx", "*.xml", "*.msgpack"]),
+        ("h94/IP-Adapter", ["models/ip-adapter-plus_sd15.safetensors",
+                            "models/image_encoder/config.json", "models/image_encoder/model.safetensors"], []),
+    ):
+        print(f"Caching {repo} ...", flush=True)
+        snapshot_download(repo, allow_patterns=includes, ignore_patterns=excludes, max_workers=2)
+    print("Checkpoint cache ready. CLIP text verifier and CarveKit download on first use.")
 
 if __name__=="__main__": main()

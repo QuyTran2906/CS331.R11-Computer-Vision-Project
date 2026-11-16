@@ -70,7 +70,7 @@ def auto_restore_drive_backups(runs_root: Path, extra_backup_dir: Optional[Path]
 
 def classify_mode(data: dict) -> str:
     cfg_mode = data.get("config", {}).get("pipeline_mode", "")
-    if data.get("config", {}).get("pipeline_version") == 2:
+    if data.get("config", {}).get("pipeline_version") in (2, 3):
         return f"{cfg_mode}_v2"
     if cfg_mode == "sd15_direct":
         return "sd15_direct"

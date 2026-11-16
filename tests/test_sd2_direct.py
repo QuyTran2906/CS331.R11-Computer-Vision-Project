@@ -37,7 +37,7 @@ class OnlySD2Models:
 
 class SD2DirectTests(unittest.TestCase):
     def setUp(self):
-        self.config = json.loads((ROOT / "configs/sd2_direct.json").read_text())
+        self.config = json.loads((ROOT / "archive_sd2/configs/sd2_direct.json").read_text())
         self.image = np.full((100, 160, 3), 230, np.uint8)
         self.visible = np.zeros((100, 160), bool)
         self.hidden = self.visible.copy()
@@ -238,7 +238,7 @@ class SD2DirectTests(unittest.TestCase):
             manifest = root / "manifest.json"
             manifest.write_text(json.dumps(records))
             proc = subprocess.run([sys.executable, str(ROOT / "scripts/run_experiment.py"),
-                "--manifest", str(manifest), "--config", str(ROOT / "configs/sd2_direct.json"),
+                "--manifest", str(manifest), "--config", str(ROOT / "archive_sd2/configs/sd2_direct.json"),
                 "--limit", "2", "--validate-only"], capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("All selected samples valid", proc.stdout)

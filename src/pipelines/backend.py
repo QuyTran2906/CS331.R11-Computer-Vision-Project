@@ -29,15 +29,15 @@ class AmodalBackend:
         from src.models.registry import FoundationModels
 
         version = config.get("pipeline_version", 1)
-        if version not in (1, 2):
-            raise ValueError("pipeline_version must be 1 or 2")
+        if version not in (1, 2, 3):
+            raise ValueError("pipeline_version must be 1, 2 or 3")
         advanced = {}
-        if version == 2:
-            from src.stages.sd2_advanced import validate_v2_config
+        if version in (2, 3):
+            from src.models.sd15_ip_adapter import validate_v2_config
             validate_v2_config(config)
             advanced["advanced_config"] = config
         elif mode == "sd15_direct":
-            from src.pipelines.sd15_direct_completer import validate_sd15_direct
+            from src.pipelines.v1_direct import validate_sd15_direct
             validate_sd15_direct(config)
             advanced["refinement_scheduler"] = "ddim"
 
@@ -51,9 +51,13 @@ class AmodalBackend:
         self.config = config
         self.mode = mode
         self.job = None
-        if version == 2:
-            from src.pipelines.v2_completer import V2AmodalCompleter
-            self.completer = V2AmodalCompleter(self.models, self.config)
+        if version in (2, 3):
+            if version == 3 or any(config[k] for k in ("use_micro_attributes", "use_strict_critic", "use_ip_adapter", "use_latent_blending")):
+                from src.pipelines.v3_proposed import V3Proposed
+                self.completer = V3Proposed(self.models, config)
+            else:
+                from src.pipelines.v2_pipeline import V2Pipeline
+                self.completer = V2Pipeline(self.models, config)
         elif self.mode == "improved":
             from src.pipelines.improved_completer import ImprovedAmodalCompleter
 
@@ -63,8 +67,10 @@ class AmodalBackend:
 
             self.completer = SD2DirectCompleter(self.models, self.config)
         elif self.mode == "sd15_direct":
-            from src.pipelines.sd15_direct_completer import SD15DirectCompleter
-            self.completer = SD15DirectCompleter(self.models, self.config)
+            from src.pipelines.v1_direct import SD15DirectCompleter
+            from src.pipelines.v1_direct import V1Direct
+            direct = V1Direct if config.get("pipeline_version") == 1 else SD15DirectCompleter
+            self.completer = direct(self.models, config)
         else:
             from src.pipelines.oracle_completer import OracleMaskAmodalCompleter
 

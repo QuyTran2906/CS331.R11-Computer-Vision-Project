@@ -1,3 +1,5 @@
+Ghi chú lịch sử: tài liệu dưới đây mô tả pipeline SD2 trước tái cấu trúc. Kiến trúc SD1.5 hiện tại xem PIPELINE.md.
+
 Pipeline của bạn thuộc rõ nhất hướng 1, có liên hệ một phần với hướng 3, và chưa triển khai hướng 2 hoặc 4. Tuy nhiên, ngay trong hướng 1 cũng cần tách phần dùng diffusion + VLM khỏi phần fine-tune nhánh điều khiển.
 
 TỔNG QUAN

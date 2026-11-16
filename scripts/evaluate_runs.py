@@ -9,9 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.evaluation.appearance_metrics import POLICY, PROTOCOL, compute_visible_appearance_metrics
+from src.eval.appearance_metrics import POLICY, PROTOCOL, compute_visible_appearance_metrics
 from src.evaluation.comparison import auto_restore_drive_backups
-from src.evaluation.metrics import compute_appearance_coherence_metrics
+from src.eval.metrics import compute_appearance_coherence_metrics
 from src.evaluation.reporting import occlusion_bin, write_json, write_reports
 from src.evaluation.runner import read_mask, read_rgb, sha
 from src.vision.image_ops import binary_dilate
@@ -22,7 +22,7 @@ def evaluate_profile(profile, records, device="cuda", continue_on_error=False, e
     """Read verified saved artifacts only; generation artifacts and result.json stay unchanged."""
     evaluate = evaluate or compute_visible_appearance_metrics
     source_hash = hashlib.sha256(b"".join((ROOT / path).read_bytes() for path in (
-        "src/evaluation/appearance_metrics.py", "src/evaluation/metrics.py",
+        "src/eval/appearance_metrics.py", "src/eval/metrics.py",
         "src/evaluation/reporting.py", "scripts/evaluate_runs.py"))).hexdigest()
     versions = {}
     from importlib.metadata import PackageNotFoundError, version

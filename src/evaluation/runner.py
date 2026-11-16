@@ -177,8 +177,9 @@ def run_one(record, sample_root, output_root, config, backend, profile):
         ]
         if oracle_mode:
             artifacts.append("occluded_input.png")
-        if config.get("pipeline_version") == 2:
-            artifacts += [name for name in ("micro_attributes.json", "critic_logs.jsonl", "v2_selection.json")
+        if config.get("pipeline_version") in (2, 3):
+            artifacts += [name for name in ("micro_attributes.json", "basic_reasoning.json", "critic_logs.jsonl",
+                                         f"v{config['pipeline_version']}_selection.json")
                           if (job / name).is_file()]
         result["artifact_sha256"] = {name: sha(job / name) for name in artifacts}
         (job / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")

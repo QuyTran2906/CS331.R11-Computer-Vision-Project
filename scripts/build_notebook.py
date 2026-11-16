@@ -1,47 +1,19 @@
+"""Generate the runnable notebook with exactly eight sequential cells."""
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO_URL = "https://github.com/tbaouit/CS331.R11-Computer-Vision-Project.git"
-
-
-def main():
-    cells = []
-
-    def md(text):
-        cells.append(dict(cell_type="markdown", metadata={}, source=text.splitlines(keepends=True)))
-
-    def code(text):
-        cells.append(
-            dict(
-                cell_type="code",
-                metadata={},
-                source=text.splitlines(keepends=True),
-                outputs=[],
-                execution_count=None,
-            )
-        )
-
-    md(f"""# CS331 — Open-World Amodal Appearance Completion on COCO-A
-Qwen3-VL semantic reasoning → Pix2Gestalt / CarveKit prior → Hybrid SD2 ROI refinement → Qwen3-VL target-aware critic.
-- **Code**: clone / `git pull` trực tiếp từ GitHub (`{REPO_URL}`). Mỗi lần cập nhật code trên GitHub chỉ cần chạy lại **Ô 2** để pull bản mới nhất.
-- **Dataset**: giữ `cocoa_dataset.zip` trên Google Drive tại `MyDrive/CS331/cocoa_dataset.zip` hoặc `MyDrive/amodal_project/cocoa_dataset.zip`.
-- **Chế độ chạy**:
-  - `configs/improved.json` (`pipeline_mode = "improved"`): tự dự đoán cả vùng bị che lẫn ngoại hình.
-  - `configs/oracle_mask.json` (`pipeline_mode = "oracle_mask"`): **nhận thẳng mask phần bị che từ input** (`gt_hidden` / `occluded_mask`) theo thiết lập Mask-Guided Amodal Appearance Completion.
-  - `configs/sd2_direct.json`: **baseline SD2 Direct**, mask có sẵn, prompt cố định, sinh một lần.
-- **Chỉ chạy baseline và so với 400 kết quả đã có:** phiên mới chạy **1 → 2 → 3B → 12 → 13 → 14 → 15**. Phiên đã cài môi trường: cập nhật ô 2 rồi chạy 12–15. Bỏ qua 4–11; không sinh lại pipeline chính. Ô 12 mặc định dev50, sau khi chốt baseline chuyển sang test400.
-- **Chạy V2 (SD1.5 + IP-Adapter Plus):** phiên mới **1 → 2 → 3 → 16 → 17 → 18 → 19**. Ô 16 mặc định thử 3 mẫu đầu của dev50, sau đó tăng `V2_LIMIT=50`. Ô 17 sinh baseline SD1.5 Direct mới, ô 18 sinh V2, ô 19 so sánh. Ô 20 tùy chọn ablation tắt IP-Adapter. Các profile SD2/V1 cũ được giữ nguyên. Chi tiết: `docs/PIPELINE_V2.md`.
-""")
-    md("## 1. GPU và Google Drive\nẨn thanh tiến trình phần trăm; vẫn hiển thị trạng thái tải model, kết quả từng mẫu và lỗi. Log của pipeline vẫn được lưu trong `outputs/runs/<profile>/pipeline.log`.")
-    code("""import subprocess, sys, os, shutil, zipfile, json, base64, re
+CELLS = [
+'''# 1. Môi trường và Google Drive
+import subprocess, sys, os, shutil, zipfile, json, base64, re
 from pathlib import Path
 os.environ["MPLBACKEND"] = "Agg"
-def sh(*cmd):
+def sh(*cmd, extra_env=None):
     env = {
         **os.environ, "MPLBACKEND": "Agg", "PYTHONUNBUFFERED": "1",
         "HF_HUB_DISABLE_PROGRESS_BARS": "1", "TQDM_DISABLE": "1",
     }
+    env.update(extra_env or {})
     with subprocess.Popen(list(map(str, cmd)), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env) as p:
         for line in p.stdout:
             # Older Pix2Gestalt/CarveKit tqdm bars may ignore TQDM_DISABLE.
@@ -64,31 +36,23 @@ for secret_name in ("HF_TOKEN", "GITHUB_TOKEN"):
         if val: os.environ[secret_name] = val
     except Exception:
         pass
-""")
-    md("## 2. Clone / Pull code mới nhất từ GitHub & giải nén dataset từ Drive\nChạy lại ô này bất cứ khi nào bạn vừa `git push` code mới lên GitHub (dataset đã giải nén sẽ được giữ nguyên, không giải nén lại).")
-    code(f"""REPO_URL = "{REPO_URL}"
-BRANCH = "main"
+''',
+'''# 2. Đồng bộ mã và dữ liệu
+REPO_URL = "https://github.com/tbaouit/CS331.R11-Computer-Vision-Project.git"
 PROJECT = Path("/content/cs331")
 PYTHON = str(PROJECT / ".venv-gpu/bin/python")
 
-git_cmd = ["git"]
+git_env = {}
 if os.environ.get("GITHUB_TOKEN"):
-    basic = base64.b64encode(f"x-access-token:{{os.environ['GITHUB_TOKEN']}}".encode()).decode()
-    git_cmd = ["git", "-c", f"http.https://github.com/.extraheader=AUTHORIZATION: basic {{basic}}"]
-
+    auth = base64.b64encode(("x-access-token:" + os.environ["GITHUB_TOKEN"]).encode()).decode()
+    git_env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+               "GIT_CONFIG_VALUE_0": "AUTHORIZATION: basic " + auth}
 if (PROJECT / ".git").is_dir():
-    print("Updating existing repository via git pull...", flush=True)
-    sh(*git_cmd, "-C", PROJECT, "fetch", "origin", BRANCH)
-    sh(*git_cmd, "-C", PROJECT, "reset", "--hard", f"origin/{{BRANCH}}")
+    sh("git", "-C", PROJECT, "pull", "--ff-only", "origin", "main", extra_env=git_env)
 elif PROJECT.exists() and any(PROJECT.iterdir()):
-    print("Initializing git tracking on existing /content/cs331 directory...", flush=True)
-    sh("git", "-C", PROJECT, "init", "-b", BRANCH)
-    sh("git", "-C", PROJECT, "remote", "add", "origin", REPO_URL)
-    sh(*git_cmd, "-C", PROJECT, "fetch", "origin", BRANCH)
-    sh("git", "-C", PROJECT, "checkout", "-f", "-B", BRANCH, f"origin/{{BRANCH}}")
+    raise RuntimeError("Move the existing non-Git /content/cs331 directory aside before cloning")
 else:
-    print("Cloning repository from GitHub...", flush=True)
-    sh(*git_cmd, "clone", "--branch", BRANCH, REPO_URL, PROJECT)
+    sh("git", "clone", "--branch", "main", REPO_URL, PROJECT, extra_env=git_env)
 
 os.chdir(PROJECT)
 sh("git", "log", "-n", "1", "--oneline")
@@ -102,9 +66,9 @@ if not (PROJECT / "dataset/cocoa/dataset.json").is_file():
     ]
     source = next((p for p in candidates if p.is_file()), None)
     if source is None:
-        raise FileNotFoundError(f"Upload cocoa_dataset.zip vào {{DRIVE}}")
+        raise FileNotFoundError(f"Upload cocoa_dataset.zip vào {DRIVE}")
     local_zip = Path("/content/cocoa_dataset.zip")
-    print(f"Copying {{source}} -> {{local_zip}} ...", flush=True)
+    print(f"Copying {source} -> {local_zip} ...", flush=True)
     shutil.copy2(source, local_zip)
     destination = PROJECT / "dataset"
     destination.mkdir(parents=True, exist_ok=True)
@@ -119,183 +83,101 @@ else:
     print("Dataset already extracted at", PROJECT / "dataset/cocoa", "(skipped)", flush=True)
 
 print("Free GiB:", round(shutil.disk_usage(PROJECT).free / 1024**3, 1))
-""")
-    md("## 3. Setup môi trường riêng + checkpoint + unit tests\nNếu phiên Colab đang chạy đã cài xong `.venv-gpu`, chỉ cần chạy dòng unit test thứ 2.")
-    code("""sh(sys.executable, "scripts/setup_colab.py")
+''',
+'''# 3. Cài thư viện, tải trọng số và kiểm thử
+sh(sys.executable, "scripts/setup_colab.py")
 sh(PYTHON, "-m", "unittest", "discover", "-s", "tests", "-v")
-""")
-    md("## 3B. Setup khi CHỈ chạy baseline SD2 Direct (thay ô 3)\nPhiên mới: cài môi trường chung nhưng bỏ tải checkpoint Pix2Gestalt. SD2 và model tính metric tải khi dùng lần đầu. Nếu runtime đã cài đủ từ lần chạy trước, có thể bỏ qua setup và chỉ chạy dòng unit tests.")
-    code('''sh(sys.executable, "scripts/setup_colab.py", "--skip-downloads")
-sh(PYTHON, "-m", "unittest", "discover", "-s", "tests", "-v")
-''')
-    md("## 4. Chuẩn bị 10 đối tượng train")
-    code("""sh(PYTHON, "scripts/prepare_data.py", "--verify-hashes")
+''',
+'''# 4. Chuẩn bị cùng tập mẫu cho mọi phiên bản
+BATCH = "dev50"  # Switch to "test400" only after selecting the final settings.
+FINAL_TEST = False
+SMOKE_LIMIT = None  # Optional: use 3 for a first check on dev50.
+sizes = {"dev50": 50, "test400": 400}
+if BATCH not in sizes:
+    raise ValueError("BATCH must be dev50 or test400")
+if BATCH == "test400" and (not FINAL_TEST or SMOKE_LIMIT is not None):
+    raise ValueError("test400 requires FINAL_TEST=True and no smoke limit")
+N = sizes[BATCH] if SMOKE_LIMIT is None else SMOKE_LIMIT
+if type(N) is not int or not 1 <= N <= sizes[BATCH]:
+    raise ValueError("Invalid smoke limit")
+extra = ["--allow-test"] if BATCH == "test400" else []
+manifest = PROJECT / "outputs" / BATCH / "manifest.json"
+if not manifest.is_file():
+    sh(PYTHON, "scripts/prepare_data.py", "--config", f"configs/data_{BATCH}.json", *extra)
+records = json.loads(manifest.read_text(encoding="utf-8"))
+if len(records) != sizes[BATCH] or any(r["split"] != BATCH.rstrip("0123456789") for r in records):
+    raise ValueError("Manifest does not match the requested split or size")
+if N < len(records):
+    manifest = manifest.with_name(f"first_{N}.json")
+    manifest.write_text(json.dumps(records[:N], ensure_ascii=False, indent=2), encoding="utf-8")
+configs = dict(v1="v1_sd15_direct", v2="v2_sd15_pipeline",
+               v3="v3_sd15_proposed", v3_no_ip="v3_ablation_no_ip")
+sh(PYTHON, "scripts/run_experiment.py", "--manifest", manifest, "--limit", N,
+   "--config", "configs/v1_sd15_direct.json", "--validate-only", *extra)
+
+def marker(role):
+    return PROJECT / "outputs" / "experiment_profiles" / f"{BATCH}_{N}_{role}.json"
+
+def run_version(role):
+    sh(PYTHON, "scripts/run_experiment.py", "--manifest", manifest, "--limit", N,
+       "--config", f"configs/{configs[role]}.json", "--backup-dir", DRIVE / "results",
+       "--profile-output", marker(role), *extra)
+''',
+'''# 5. Chạy V1: SD1.5 Direct
+run_version("v1")
+''',
+'''# 6. Chạy V2: pipeline vòng kín cơ bản
+run_version("v2")
+''',
+'''# 7. Chạy V3 và tùy chọn ablation
+RUN_NO_IP_ABLATION = False
+run_version("v3")
+if RUN_NO_IP_ABLATION:
+    run_version("v3_no_ip")
+''',
+'''# 8. Đánh giá, so sánh và lưu báo cáo
 from PIL import Image
 from IPython.display import display
-display(Image.open(PROJECT / "outputs/train_smoke/contact_sheet.jpg"))
-print((PROJECT / "configs/oracle_mask.json").read_text())
-""")
-    md("## 5A. Chạy pipeline chuyên biệt nhận thẳng Mask phần bị che từ Input (`oracle_mask`)")
-    code("""sh(PYTHON, "scripts/run_experiment.py", "--manifest", "outputs/train_smoke/manifest.json", "--config", "configs/oracle_mask.json", "--limit", "10", "--backup-dir", str(DRIVE / "results"))
-""")
-    md("## 5B. Chạy pipeline Blind Improved (tự đoán mask + khôi phục diện mạo)")
-    code("""sh(PYTHON, "scripts/run_experiment.py", "--manifest", "outputs/train_smoke/manifest.json", "--config", "configs/improved.json", "--limit", "10", "--backup-dir", str(DRIVE / "results"))
-""")
-    md("## 6. Kiểm tra toàn bộ output của profile vừa chạy")
-    code("""from PIL import Image
-from IPython.display import display
+FID_REFERENCE = None  # For test400, set to a Drive folder of >=400 clean object crops.
+roles = ["v1", "v2", "v3"] + (["v3_no_ip"] if RUN_NO_IP_ABLATION else [])
+profiles = {role: json.loads(marker(role).read_text(encoding="utf-8"))["profile"] for role in roles}
+for profile in profiles.values():
+    sh(PYTHON, "scripts/evaluate_runs.py", "--profile", profile, "--manifest", manifest,
+       "--device", "cuda", "--backup-dir", DRIVE / "results")
+output = PROJECT / "outputs" / "comparisons" / (
+    f"{BATCH}_{N}_" + "_".join(profiles.values()))
+args = [arg for role, profile in profiles.items()
+        for arg in ("--" + role.replace("_", "-"), PROJECT / "outputs" / "runs" / profile)]
+fid_args = ["--fid-reference", FID_REFERENCE] if FID_REFERENCE else []
+sh(PYTHON, "scripts/compare_versions.py", "--manifest", manifest, "--output", output, *args, *fid_args)
+report = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+for role in roles:
+    relevant = {k: v["mean"] for k, v in report["metrics"][role].items()
+                if k in ("CLIP_score", "seam_mae", "color_hist_sim")}
+    print(role, relevant, "critic:", report["critic"][role])
+if report["fid"]:
+    print("FID:", report["fid"])
+for name in report["previews"]:
+    display(Image.open(output / name))
+backup = DRIVE / "results" / "comparisons"
+backup.mkdir(parents=True, exist_ok=True)
+archive = Path(shutil.make_archive(str(output), "zip", output))
+shutil.copy2(archive, backup / archive.name)
+print("CSV, JSON and previews:", backup / archive.name)
+'''
+]
 
-runs_dir = PROJECT / "outputs/runs"
-profiles = sorted([p for p in runs_dir.iterdir() if p.is_dir() and list(p.glob("*/*/result.json"))],
-                  key=lambda d: max(f.stat().st_mtime for f in d.glob("*/*/result.json")))
-if not profiles: raise RuntimeError("No successful output; inspect pipeline.log and failure.json")
-latest_profile = profiles[-1]
-print("Latest profile:", latest_profile)
-result_files = sorted(latest_profile.glob("*/*/result.json"))
-if globals().get("BATCH_MANIFEST"):
-    active_ids = {r["sample_id"] for r in json.loads((PROJECT / BATCH_MANIFEST).read_text())}
-    result_files = [p for p in result_files if p.parent.parent.name in active_ids]
-    print("Preview subset:", BATCH_MANIFEST)
-print("Completed samples:", len(result_files), "— showing at most 10 previews")
-for res_file in result_files[:10]:
-    res = json.loads(res_file.read_text())
-    m = res["metrics"]
-    print(f"=== {res['sample_id']} ({res.get('name')}) | Amodal IoU={m['amodal_iou']:.4f} | Hidden IoU={m['hidden_iou']:.4f} | Score={res.get('final_score')} ===")
-    display(Image.open(res_file.parent / "preview.jpg"))
-""")
-    md("## 7. So sánh trực tiếp các chế độ (bảng số liệu + lưới ảnh)\nTự động khôi phục các bản backup từ Google Drive (`DRIVE / 'results'`) để xuất bảng và lưới so sánh vào `outputs/runs/comparison_grid.jpg`.")
-    code("""from PIL import Image
-from IPython.display import display
 
-sh(PYTHON, "scripts/compare_runs.py", "--backup-dir", str(DRIVE / "results"))
-display(Image.open(PROJECT / "outputs/runs/comparison_grid.jpg"))
-""")
-    md("## 8. Chấm metric theo tác giả trên ảnh đã lưu\nChỉ chạy bước chấm điểm, không sinh lại ảnh. Nhập đúng profile đã in ở đầu lần chạy (có thể dùng profile cũ trên Drive). CLIP là class relevance; LPIPS/CLIP feature/SSIM/PSNR đo bảo toàn vùng nhìn thấy. Xem `docs/EVALUATION.md`.")
-    code('''EVAL_PROFILE = "02549104b0c4d76a"  # THAY bằng profile cần chấm; đây là Oracle-Mask 10 mẫu đã chạy trước
-EVAL_MANIFEST = "outputs/train_smoke/manifest.json"
-sh(PYTHON, "scripts/evaluate_runs.py", "--profile", EVAL_PROFILE,
-   "--manifest", EVAL_MANIFEST, "--device", "cuda", "--backup-dir", str(DRIVE / "results"))
-reports = sorted((PROJECT / "outputs/runs" / EVAL_PROFILE / "evaluation").glob("*/*/aggregate.json"),
-                 key=lambda p: p.stat().st_mtime)
-report_path = reports[-1]
-report = json.loads(report_path.read_text())
-print(json.dumps(report["overall"], indent=2))
-print("CSV:", report_path.parent / "metrics.csv")
-''')
-    md("## 9. Chuẩn bị batch lớn: test400\nĐã hoàn tất dev50; mặc định chạy đánh giá cuối test400 với cấu hình khôi phục giữ nguyên. Không chỉnh tham số theo kết quả test. Dữ liệu dùng seed cố định, một object/ảnh, lọc kích thước và tỷ lệ che 10–60%; không resize ảnh gốc. Contact sheet tối đa 20 mẫu. Có thể chọn lại dev50 để kiểm tra.")
-    code('''from PIL import Image
-from IPython.display import display
-
-BATCH = "test400"  # dev50, test200 hoặc test400
-FINAL_TEST = True  # đã chốt cấu hình sau dev50
-batch_sizes = {"dev50": 50, "test200": 200, "test400": 400}
-if BATCH not in batch_sizes:
-    raise ValueError("Choose dev50, test200 or test400")
-if BATCH.startswith("test") and not FINAL_TEST:
-    raise ValueError("Chốt cấu hình trước khi mở final test")
-extra = ["--allow-test"] if BATCH.startswith("test") else []
-sh(PYTHON, "scripts/prepare_data.py", "--config", f"configs/data_{BATCH}.json", *extra)
-BATCH_MANIFEST = f"outputs/{BATCH}/manifest.json"
-sh(PYTHON, "scripts/run_experiment.py", "--manifest", BATCH_MANIFEST,
-   "--config", "configs/oracle_mask.json", "--limit", str(batch_sizes[BATCH]),
-   "--validate-only", *extra)
-display(Image.open(PROJECT / f"outputs/{BATCH}/contact_sheet.jpg"))
-''')
-    md("## 10. Chạy batch lớn và lưu tiến độ trên Drive\nNhánh mask-given là bài toán chính. Cùng runtime/config/code/manifest sẽ tự bỏ qua output hợp lệ; phiên mới tự khôi phục đúng profile từ backup. Dừng ở lỗi để kiểm tra; có thể thêm `--continue-on-error` nếu muốn ghi nhận lỗi từng mẫu và tiếp tục (OOM vẫn dừng). Không chạy song song các ô GPU.")
-    code('''batch_records = json.loads((PROJECT / BATCH_MANIFEST).read_text())
-if len(batch_records) != batch_sizes[BATCH]:
-    raise ValueError("Manifest does not contain the requested batch size")
-sh(PYTHON, "scripts/run_experiment.py", "--manifest", BATCH_MANIFEST,
-   "--config", "configs/oracle_mask.json", "--limit", str(len(batch_records)),
-   "--backup-every", "5", "--backup-dir", str(DRIVE / "results"), *extra)
-''')
-    md("## 11. Chấm và xuất báo cáo batch lớn\nNhập profile chính xác từ ô 10. Tổng hợp theo object và mức che, có mean/std/n, ghi riêng các mẫu lỗi hoặc chưa chạy. Không coi IoU=1 của nhánh mask-given là kết quả dự đoán.")
-    code('''BATCH_PROFILE = "PASTE_PROFILE_FROM_CELL_10"
-if BATCH_PROFILE == "PASTE_PROFILE_FROM_CELL_10":
-    raise ValueError("Điền profile đã in ở ô 10")
-sh(PYTHON, "scripts/evaluate_runs.py", "--profile", BATCH_PROFILE,
-   "--manifest", BATCH_MANIFEST, "--device", "cuda", "--backup-dir", str(DRIVE / "results"))
-''')
-    md("## 12. Baseline: chọn cùng subset và kiểm tra dữ liệu\nDùng **SD2 Direct Inpainting** làm đối chứng cho nhánh mask-given. Chạy dev50 để kiểm tra trước; sau đó giữ nguyên cấu hình, đổi `BASELINE_BATCH=\"test400\"` và `BASELINE_FROZEN=True`, chạy lại 12–15. Dùng manifest đã có; chỉ tạo từ cấu hình seed cố định nếu chưa tồn tại. Không chạy lại ô 10. Xem `docs/BASELINE.md`.")
-    code('''from PIL import Image
-from IPython.display import display
-
-BASELINE_BATCH = "dev50"  # đổi thành "test400" sau khi kiểm tra baseline trên dev
-BASELINE_FROZEN = False  # đổi True khi chốt cấu hình và chạy test400
-baseline_sizes = {"dev50": 50, "test400": 400}
-if BASELINE_BATCH not in baseline_sizes:
-    raise ValueError("Chọn dev50 hoặc test400")
-if BASELINE_BATCH.startswith("test") and not BASELINE_FROZEN:
-    raise ValueError("Chốt baseline trên dev50, rồi đặt BASELINE_FROZEN=True")
-BASELINE_EXTRA = ["--allow-test"] if BASELINE_BATCH.startswith("test") else []
-BASELINE_MANIFEST = f"outputs/{BASELINE_BATCH}/manifest.json"
-if not (PROJECT / BASELINE_MANIFEST).is_file():
-    sh(PYTHON, "scripts/prepare_data.py", "--config", f"configs/data_{BASELINE_BATCH}.json", *BASELINE_EXTRA)
-baseline_records = json.loads((PROJECT / BASELINE_MANIFEST).read_text())
-if len(baseline_records) != baseline_sizes[BASELINE_BATCH]:
-    raise ValueError("Số mẫu trong manifest không đúng batch đã chọn")
-sh(PYTHON, "scripts/run_experiment.py", "--manifest", BASELINE_MANIFEST,
-   "--config", "configs/sd2_direct.json", "--limit", str(len(baseline_records)),
-   "--validate-only", *BASELINE_EXTRA)
-BASELINE_RUN_FILE = PROJECT / f"outputs/baseline_runs/{BASELINE_BATCH}.json"
-print((PROJECT / "configs/sd2_direct.json").read_text())
-''')
-    md("## 13. Sinh baseline + backup/resume\nChỉ nạp SD2; không dùng Pix2Gestalt, Qwen hay critic. Chạy một lần/mẫu, prompt cố định, strength=1, 28 bước, guidance=7, seed=42. Backup mỗi 5 mẫu. Profile baseline được lưu tự động cho ô tiếp theo. Với cùng code/config/môi trường, chạy lại ô này sẽ tiếp tục các mẫu còn thiếu.")
-    code('''sh(PYTHON, "scripts/run_experiment.py", "--manifest", BASELINE_MANIFEST,
-   "--config", "configs/sd2_direct.json", "--limit", str(len(baseline_records)),
-   "--backup-every", "5", "--backup-dir", str(DRIVE / "results"),
-   "--profile-output", str(BASELINE_RUN_FILE), *BASELINE_EXTRA)
-BASELINE_PROFILE = json.loads(BASELINE_RUN_FILE.read_text())["profile"]
-print("Baseline profile:", BASELINE_PROFILE)
-active_ids = {r["sample_id"] for r in baseline_records}
-baseline_previews = sorted((PROJECT / "outputs/runs" / BASELINE_PROFILE).glob("*/*/preview.jpg"))
-for path in [p for p in baseline_previews if p.parent.parent.name in active_ids][:5]:
-    display(Image.open(path))
-''')
-    md("## 14. Chấm cùng protocol trên baseline và pipeline chính đã lưu\nKhông sinh lại ảnh. Profile chính mặc định là `a0ab44af3e253863` đã chạy dev50 + test400; tự khôi phục từ Drive. Nếu dùng kết quả chính khác, sửa `MAIN_PROFILE`. Đánh giá cả hai trong cùng môi trường, dùng lại cache metric hợp lệ. CLIP đo phù hợp nhãn; các metric visible chủ yếu kiểm tra bảo toàn ảnh, không chứng minh khôi phục đúng RGB vùng ẩn.")
-    code('''MAIN_PROFILE = "a0ab44af3e253863"
-BASELINE_PROFILE = json.loads(BASELINE_RUN_FILE.read_text())["profile"]
-for profile in (BASELINE_PROFILE, MAIN_PROFILE):
-    sh(PYTHON, "scripts/evaluate_runs.py", "--profile", profile,
-       "--manifest", BASELINE_MANIFEST, "--device", "cuda",
-       "--backup-dir", str(DRIVE / "results"))
-''')
-    md("## 15. So sánh theo từng mẫu + 20 mẫu trực quan cố định\nKiểm tra cùng ảnh/mask/seed/checkpoint, đầy đủ mẫu và cùng protocol metric trước khi so sánh. Xuất CSV từng cặp, mean/std/n và chênh lệch **Main − Baseline**, nhóm theo class/mức che; 20 mẫu ngẫu nhiên seed=42 chia thành 5 trang crop vật thể. Đánh giá thêm lỗi chất liệu, tay/chân, chữ, vật thể nhỏ và cắt ngoài khung. SeamMAE/ColorHist chỉ là chẩn đoán; không chọn phương pháp thắng chỉ từ hai số này. Đây là so sánh toàn pipeline với baseline đơn giản, ngân sách sinh ảnh khác nhau.")
-    code('''COMPARE_DIR = PROJECT / "outputs/comparisons" / f"{BASELINE_BATCH}_{BASELINE_PROFILE}_vs_{MAIN_PROFILE}"
-sh(PYTHON, "scripts/compare_baseline.py", "--manifest", BASELINE_MANIFEST,
-   "--baseline", BASELINE_PROFILE, "--main-profile", MAIN_PROFILE,
-   "--output-dir", str(COMPARE_DIR), "--preview-count", "20")
-comparison = json.loads((COMPARE_DIR / "comparison.json").read_text())
-for name in comparison["previews"]:
-    display(Image.open(COMPARE_DIR / name))
-print("CSV:", COMPARE_DIR / "paired_metrics.csv")
-print("JSON:", COMPARE_DIR / "comparison.json")
-comparison_backup = DRIVE / "results/comparisons"
-comparison_backup.mkdir(parents=True, exist_ok=True)
-archive = Path(shutil.make_archive(str(COMPARE_DIR), "zip", COMPARE_DIR))
-shutil.copy2(archive, comparison_backup / archive.name)
-print("Comparison backup:", comparison_backup / archive.name)
-''')
-    from notebook_v2_cells import append_v2_cells
-    append_v2_cells(md, code)
-    for i, cell in enumerate(cells):
-        cell["id"] = f"amodal-{i:02d}"
-        if cell["cell_type"] == "code":
-            compile("".join(cell["source"]), f"cell_{i}", "exec")
-    doc = dict(
-        cells=cells,
-        metadata=dict(
-            accelerator="GPU",
-            kernelspec=dict(name="python3", display_name="Python 3"),
-            language_info=dict(name="python"),
-        ),
-        nbformat=4,
-        nbformat_minor=5,
-    )
+def main():
+    cells = []
+    for index, source in enumerate(CELLS, 1):
+        compile(source, f"cell_{index}", "exec")
+        cells.append(dict(cell_type="code", id=f"amodal-{index:02d}", metadata={},
+                          source=source.splitlines(keepends=True), outputs=[], execution_count=None))
+    notebook = dict(cells=cells, nbformat=4, nbformat_minor=5,
+                    metadata=dict(accelerator="GPU", kernelspec=dict(name="python3", display_name="Python 3")))
     target = ROOT / "notebooks/Amodal_Completion_Colab.ipynb"
-    target.parent.mkdir(exist_ok=True)
-    target.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("Notebook generated and syntax checked:", target.relative_to(ROOT).as_posix())
+    target.write_text(json.dumps(notebook, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

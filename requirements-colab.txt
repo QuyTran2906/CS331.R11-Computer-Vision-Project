@@ -33,3 +33,4 @@ requests
 webdataset==1.0.2
 lovely-numpy==0.2.22
 lovely-tensors==0.1.22
+pytorch-fid==0.3.0

@@ -8,14 +8,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from src.stages.sd2_advanced import validate_v2_config
+from src.models.sd15_ip_adapter import validate_v2_config
 
 
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=ROOT / "configs/oracle_mask_v2.json")
+    parser.add_argument("--config", type=Path, default=ROOT / "configs/v3_sd15_proposed.json")
     parser.add_argument("--config-only", action="store_true")
     parser.add_argument("--check-access", action="store_true", help="Check backbone/adapter configs and files without downloading large weights")
     args = parser.parse_args()

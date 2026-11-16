@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def update_critic_log(root, result):
-    if result.get("config", {}).get("pipeline_version") != 2:
+    if result.get("config", {}).get("pipeline_version") not in (2, 3):
         return
     path = Path(root) / "critic_logs.jsonl"
     existing = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] if path.is_file() else []

@@ -154,7 +154,7 @@ def compare_profiles(records, baseline_profile, main_profile, output, preview_co
         if comparison_kind == "direct" and (bc.get("enable_critic") or bc.get("text_query_policy", "empty") != "empty"):
             raise ValueError("Baseline must have no critic and no annotation-label prompt")
         if any(bc.get(k) != mc.get(k) for k in ("seed", "inpainting_model_id")) or any(c.get("text_query_policy", "empty") != "empty" for c in (bc, mc)):
-            raise ValueError(f"Seed, SD2 checkpoint or label policy differs: {sid}")
+            raise ValueError(f"Seed, inpainting checkpoint or label policy differs: {sid}")
         if bc.get("pipeline_mode") == "sd15_direct" or (bc.get("pipeline_version") == 2 and mc.get("pipeline_version") == 2):
             if bc.get("refinement_scheduler") != mc.get("refinement_scheduler"):
                 raise ValueError(f"Refinement schedulers differ: {sid}")
