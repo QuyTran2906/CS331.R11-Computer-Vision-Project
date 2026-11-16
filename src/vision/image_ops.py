@@ -83,83 +83,9 @@ def binary_erode(mask: np.ndarray, radius: int) -> np.ndarray:
     return eroded[r:-r, r:-r] > 127
 
 
-def binary_open(mask: np.ndarray, radius: int) -> np.ndarray:
-    if radius <= 0:
-        return np.asarray(mask, dtype=bool).copy()
-    return binary_dilate(binary_erode(mask, radius), radius)
-
-
-def binary_close(mask: np.ndarray, radius: int) -> np.ndarray:
-    if radius <= 0:
-        return np.asarray(mask, dtype=bool).copy()
-    return binary_erode(binary_dilate(mask, radius), radius)
-
-
 def mask_outline(mask: np.ndarray, thickness: int = 2) -> np.ndarray:
     m = np.asarray(mask, dtype=bool)
     return binary_dilate(m, max(1, thickness)) & (~m)
-
-
-def keep_connected_to_anchor(mask: np.ndarray, anchor: np.ndarray) -> np.ndarray:
-    """Keep 8-connected components of `mask` that intersect `anchor`."""
-    mask_bool = np.asarray(mask, dtype=bool)
-    seeds = mask_bool & np.asarray(anchor, dtype=bool)
-    if not mask_bool.any() or not seeds.any():
-        return np.zeros_like(mask_bool, dtype=bool)
-
-    if cv2 is not None:
-        _, labels = cv2.connectedComponents(mask_bool.astype(np.uint8), connectivity=8)
-        valid_ids = np.unique(labels[seeds])
-        valid_ids = valid_ids[valid_ids > 0]
-        return np.isin(labels, valid_ids)
-
-    if ndi is not None:
-        labels, _ = ndi.label(mask_bool, structure=np.ones((3, 3), dtype=int))
-        valid_ids = np.unique(labels[seeds])
-        valid_ids = valid_ids[valid_ids > 0]
-        return np.isin(labels, valid_ids)
-
-    h, w = mask_bool.shape
-    visited = seeds.copy()
-    q = deque(map(tuple, np.argwhere(seeds)))
-    while q:
-        y, x = q.popleft()
-        y0, y1 = max(0, y - 1), min(h, y + 2)
-        x0, x1 = max(0, x - 1), min(w, x + 2)
-        sub_mask = mask_bool[y0:y1, x0:x1] & (~visited[y0:y1, x0:x1])
-        if sub_mask.any():
-            for dy, dx in np.argwhere(sub_mask):
-                ny, nx = y0 + int(dy), x0 + int(dx)
-                visited[ny, nx] = True
-                q.append((ny, nx))
-    return visited
-
-
-def fill_small_internal_holes(mask: np.ndarray, max_hole_pixels: int = 36) -> np.ndarray:
-    """Fill tiny enclosed pinholes inside `mask` without altering real openings."""
-    mask_bool = np.asarray(mask, dtype=bool)
-    inv = ~mask_bool
-    if not inv.any():
-        return mask_bool.copy()
-
-    h, w = mask_bool.shape
-    border = np.zeros((h, w), dtype=bool)
-    border[0, :] = border[-1, :] = border[:, 0] = border[:, -1] = True
-    exterior_bg = keep_connected_to_anchor(inv, border)
-    enclosed_holes = inv & (~exterior_bg)
-    if not enclosed_holes.any():
-        return mask_bool.copy()
-
-    if cv2 is not None:
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(enclosed_holes.astype(np.uint8), connectivity=8)
-        small_ids = [idx for idx in range(1, num_labels) if stats[idx, cv2.CC_STAT_AREA] <= max_hole_pixels]
-        if not small_ids:
-            return mask_bool.copy()
-        return mask_bool | np.isin(labels, small_ids)
-
-    if enclosed_holes.sum() <= max_hole_pixels:
-        return mask_bool | enclosed_holes
-    return mask_bool.copy()
 
 
 def nearest_foreground_fill(rgb: np.ndarray, known_mask: np.ndarray) -> np.ndarray:
@@ -215,4 +141,3 @@ def gaussian_blur_rgb(rgb: np.ndarray, sigma: float = 4.0) -> np.ndarray:
         return cv2.GaussianBlur(rgb.astype(np.float32), (0, 0), sigmaX=float(sigma), sigmaY=float(sigma))
     pil_blurred = Image.fromarray(rgb.astype(np.uint8)).filter(ImageFilter.GaussianBlur(radius=float(sigma)))
     return np.asarray(pil_blurred, dtype=np.float32)
-

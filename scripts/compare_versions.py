@@ -8,7 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.compare_baseline import load_evaluation, verified_jobs
+from src.eval.profiles import load_evaluation, verified_jobs
 from src.eval.visualize import comparison_grid
 from src.models.sd15_ip_adapter import SD15_INPAINTING
 from src.evaluation.reporting import aggregate, write_json

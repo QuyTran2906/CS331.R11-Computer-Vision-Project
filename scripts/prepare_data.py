@@ -13,7 +13,7 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=Path, default=ROOT / "configs/data.json")
+    parser.add_argument("--config", type=Path, default=ROOT / "configs/data_dev50.json")
     parser.add_argument("--verify-hashes", action="store_true", help="Read every JPG and verify against its manifest")
     parser.add_argument("--allow-test", action="store_true", help="Prepare final test subset only after freezing settings")
     args = parser.parse_args()

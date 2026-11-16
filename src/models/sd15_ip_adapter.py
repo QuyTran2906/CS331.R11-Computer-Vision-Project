@@ -17,10 +17,10 @@ IP_ADAPTER_PLUS = "ip-adapter-plus_sd15.safetensors"
 def validate_v2_config(config):
     if config.get("pipeline_version", 1) not in (2, 3):
         raise ValueError("Expected pipeline_version 2 or 3")
-    if config.get("pipeline_mode") not in ("oracle_mask", "improved"):
-        raise ValueError("V2 supports oracle_mask and improved modes")
-    if config.get("pipeline_mode") == "improved" and config.get("use_occluded_mask_input"):
-        raise ValueError("Blind improved V2 must not receive GT hidden masks")
+    if config.get("pipeline_mode") != "oracle_mask":
+        raise ValueError("V2 and V3 require the given-mask mode")
+    if config.get("inpainting_model_id") != SD15_INPAINTING:
+        raise ValueError("All experiments require the SD1.5 inpainting checkpoint")
     for key in ("use_micro_attributes", "use_ip_adapter", "use_latent_blending", "use_strict_critic", "enable_critic"):
         if type(config.get(key)) is not bool:
             raise ValueError(f"{key} must be a JSON boolean")
@@ -40,11 +40,6 @@ def validate_v2_config(config):
     if type(config.get("seed")) is not int or config["seed"] < 0:
         raise ValueError("seed must be a nonnegative integer")
     if config.get("use_ip_adapter"):
-        # Official SD1.5 adapter attention projections are 768-wide. SD2 is 1024.
-        # Never silently disable an explicitly requested adapter or swap the backbone.
-        if config.get("inpainting_model_id") != SD15_INPAINTING:
-            raise ValueError("Official h94 SD1.5 IP-Adapter is incompatible with SD2. "
-                             "Keep use_ip_adapter=false for SD2 or explicitly choose the supported SD1.5 inpainting backbone.")
         if config.get("ip_adapter_model_id") != IP_ADAPTER_REPO or config.get("ip_adapter_weight_name") != IP_ADAPTER_PLUS:
             raise ValueError("V2 uses the official h94 IP-Adapter Plus SD1.5 safetensors checkpoint")
 

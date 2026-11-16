@@ -37,7 +37,7 @@ def backup(job_root, destination):
 def main():
     if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", type=Path, default=ROOT / "outputs/train_smoke/manifest.json")
+    parser.add_argument("--manifest", type=Path, default=ROOT / "outputs/dev50/manifest.json")
     parser.add_argument("--config", type=Path, default=ROOT / "configs/v1_sd15_direct.json")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--backup-dir", type=Path)
@@ -48,19 +48,8 @@ def main():
     parser.add_argument("--profile-output", type=Path, help="Write the exact successful profile ID for notebook follow-up cells")
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    if config.get("pipeline_version") in (2, 3):
-        from src.models.sd15_ip_adapter import validate_v2_config
-        validate_v2_config(config)
-    elif config.get("pipeline_mode") == "sd15_direct":
-        from src.pipelines.v1_direct import validate_sd15_direct
-        validate_sd15_direct(config)
-    elif config.get("pipeline_mode") == "sd2_direct":
-        if config.get("enable_critic") or config.get("text_query_policy", "empty") != "empty":
-            raise ValueError("SD2 Direct requires enable_critic=false and a fixed category-free prompt")
-    elif not config.get("enable_critic"):
-        raise ValueError("This entry point requires enable_critic=true")
-    elif not 1 <= config["max_critic_iter"] <= 10 or not 0 <= config["critique_threshold"] <= 10:
-        raise ValueError("Invalid critic settings")
+    from src.pipelines.backend import validate_experiment_config
+    validate_experiment_config(config)
     records = json.loads(args.manifest.read_text(encoding="utf-8"))
     if args.limit < 1: raise ValueError("--limit must be positive")
     records = records[:args.limit]
@@ -88,7 +77,7 @@ def main():
     write_json(output_root / "preflight.json", validation)
     write_json(output_root / "manifest.json", records)
     if args.backup_dir:
-        from src.evaluation.comparison import auto_restore_drive_backups
+        from src.evaluation.backups import auto_restore_drive_backups
         auto_restore_drive_backups(ROOT / "outputs/runs", args.backup_dir, profiles={profile})
     (output_root / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     for name in ["installed_gpu_versions.txt", "dependency_versions.json"]:
@@ -114,7 +103,7 @@ def main():
                         backend.begin_sample(job)
                     def complete(self, *values, **kwargs): return backend.complete(*values, **kwargs)
                 lazy = LazyBackend()
-                print(f"Profile: {profile} | Mode: {config.get('pipeline_mode', 'improved')} | Targets: {len(records)}", flush=True)
+                print(f"Profile: {profile} | Mode: {config['pipeline_mode']} | Targets: {len(records)}", flush=True)
                 for idx, record in enumerate(records, start=1):
                     dirty_backup = True
                     failed = None

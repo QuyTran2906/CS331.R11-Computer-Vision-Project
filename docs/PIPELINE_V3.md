@@ -13,6 +13,6 @@
   viên có điểm hợp lệ tốt nhất và ghi `exhausted_retries`.
 
 `critic_logs.jsonl` lưu quyết định từng lượt. Kết quả đã sinh có thể REJECT.
-`v3_ablation_no_ip.json` chỉ tắt một cờ so với V3; hai nhánh có thể tự chọn số
+Ô 7 tạo cấu hình đối chứng bằng cách tắt đúng một cờ so với V3; hai nhánh có thể tự chọn số
 lượt thử khác nhau do critic. So V2 với V3 để đo bốn thay đổi cùng lúc; so
 V3-no-IP với V3 để phân tích tác động của riêng adapter trong hệ thống vòng kín.

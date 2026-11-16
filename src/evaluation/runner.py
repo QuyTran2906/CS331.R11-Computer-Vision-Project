@@ -10,7 +10,7 @@ import traceback
 import numpy as np
 from PIL import Image, ImageDraw
 
-from src.evaluation.metrics import iou
+from src.eval.metrics import iou
 
 
 def sha(path):
@@ -60,7 +60,7 @@ def resolve_sample(base, value):
 
 
 def _uses_occluded_mask_input(config):
-    return config.get("pipeline_mode") in ("oracle_mask", "gt_mask", "sd2_direct", "sd15_direct") or bool(config.get("use_occluded_mask_input"))
+    return config.get("pipeline_mode") in ("oracle_mask", "sd15_direct") or bool(config.get("use_occluded_mask_input"))
 
 
 def run_one(record, sample_root, output_root, config, backend, profile):
@@ -138,7 +138,7 @@ def run_one(record, sample_root, output_root, config, backend, profile):
             visible_exact_fraction=float(np.all(rgba[:, :, :3][visible] == image[visible], axis=1).mean()),
         )
         if config.get("appearance_metrics"):
-            from src.evaluation.appearance_metrics import compute_visible_appearance_metrics
+            from src.eval.appearance_metrics import compute_visible_appearance_metrics
 
             metrics.update(
                 compute_visible_appearance_metrics(image, rgba[:, :, :3], visible, record.get("name", "object"),
@@ -192,4 +192,3 @@ def run_one(record, sample_root, output_root, config, backend, profile):
             encoding="utf-8",
         )
         raise
-

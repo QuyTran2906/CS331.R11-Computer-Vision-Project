@@ -8,7 +8,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from src.evaluation import appearance_metrics as metrics
+from src.eval import appearance_metrics as metrics
 from src.evaluation.reporting import aggregate
 from src.evaluation.runner import run_one, sha
 from src.evaluation.validation import validate_manifest
@@ -140,7 +140,7 @@ class AppearanceEvaluationTests(unittest.TestCase):
 
     def test_backup_merges_new_metric_cache_without_overwriting_local_results(self):
         import zipfile
-        from src.evaluation.comparison import auto_restore_drive_backups
+        from src.evaluation.backups import auto_restore_drive_backups
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             runs, backup = root / "runs", root / "backup"
@@ -159,7 +159,7 @@ class AppearanceEvaluationTests(unittest.TestCase):
 
     def test_seeded_export_is_repeatable_and_contact_sheet_is_bounded(self):
         from scripts.prepare_data import export_samples
-        from src.data.cocoa import Target
+        from src.data.cocoa_loader import Target
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             Image.fromarray(np.full((40, 48, 3), 80, np.uint8)).save(root / "source.png")

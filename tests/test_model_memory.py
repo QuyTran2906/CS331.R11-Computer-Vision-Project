@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import numpy as np
 
-from src.models.registry import FoundationModels
-from src.models.pix2gestalt import apply_inference_ema, Pix2GestaltModel
+from src.models.memory_manager import FoundationModels
+from src.models.pix2gestalt_prior import apply_inference_ema, Pix2GestaltModel
 from src.models.qwen_vl import QwenVLModel
 from src.pipelines.backend import AmodalBackend
 
@@ -104,12 +104,12 @@ class ModelMemoryTests(unittest.TestCase):
                 self.assertFalse(resident)
 
     def test_backend_releases_last_model_on_success_and_error_in_both_modes(self):
-        for mode in ("improved", "oracle_mask"):
+        for mode in ("sd15_direct", "oracle_mask"):
             for fail in (False, True):
                 with self.subTest(mode=mode, fail=fail):
                     registry, _, resident, _ = self.make_registry()
                     backend = AmodalBackend.__new__(AmodalBackend)
-                    backend.models, backend.mode = registry, mode
+                    backend.models = registry
                     backend.config, backend.job = {}, None
                     def complete(**kwargs):
                         registry.vlm
@@ -119,9 +119,9 @@ class ModelMemoryTests(unittest.TestCase):
                     backend.completer = SimpleNamespace(complete=complete)
                     if fail:
                         with self.assertRaisesRegex(RuntimeError, "synthetic generation failure"):
-                            backend.complete(None, None, "object", occluded_mask=1 if mode == "oracle_mask" else None)
+                            backend.complete(None, None, "object", occluded_mask=1)
                     else:
-                        self.assertEqual(backend.complete(None, None, "object", occluded_mask=1 if mode == "oracle_mask" else None), {"finished": True})
+                        self.assertEqual(backend.complete(None, None, "object", occluded_mask=1), {"finished": True})
                     self.assertFalse(resident)
                     self.assertIsNone(registry._active)
 

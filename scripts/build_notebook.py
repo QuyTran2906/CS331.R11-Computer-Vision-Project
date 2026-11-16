@@ -111,16 +111,17 @@ if N < len(records):
     manifest = manifest.with_name(f"first_{N}.json")
     manifest.write_text(json.dumps(records[:N], ensure_ascii=False, indent=2), encoding="utf-8")
 configs = dict(v1="v1_sd15_direct", v2="v2_sd15_pipeline",
-               v3="v3_sd15_proposed", v3_no_ip="v3_ablation_no_ip")
+               v3="v3_sd15_proposed")
 sh(PYTHON, "scripts/run_experiment.py", "--manifest", manifest, "--limit", N,
    "--config", "configs/v1_sd15_direct.json", "--validate-only", *extra)
 
 def marker(role):
     return PROJECT / "outputs" / "experiment_profiles" / f"{BATCH}_{N}_{role}.json"
 
-def run_version(role):
+def run_version(role, config=None):
+    config = config or f"configs/{configs[role]}.json"
     sh(PYTHON, "scripts/run_experiment.py", "--manifest", manifest, "--limit", N,
-       "--config", f"configs/{configs[role]}.json", "--backup-dir", DRIVE / "results",
+       "--config", config, "--backup-dir", DRIVE / "results",
        "--profile-output", marker(role), *extra)
 ''',
 '''# 5. Chạy V1: SD1.5 Direct
@@ -133,7 +134,11 @@ run_version("v2")
 RUN_NO_IP_ABLATION = False
 run_version("v3")
 if RUN_NO_IP_ABLATION:
-    run_version("v3_no_ip")
+    ablation_path = marker("v3_no_ip").with_name("v3_no_ip_config.json")
+    ablation_path.parent.mkdir(parents=True, exist_ok=True)
+    proposed = json.loads((PROJECT / "configs/v3_sd15_proposed.json").read_text(encoding="utf-8"))
+    ablation_path.write_text(json.dumps(dict(proposed, use_ip_adapter=False), indent=2), encoding="utf-8")
+    run_version("v3_no_ip", ablation_path)
 ''',
 '''# 8. Đánh giá, so sánh và lưu báo cáo
 from PIL import Image

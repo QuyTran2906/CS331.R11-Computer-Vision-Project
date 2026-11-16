@@ -14,8 +14,6 @@ DEFAULT_NEGATIVE_PROMPT = (
     "text, watermark, artifacts"
 )
 
-from src.vlm.clip_verify import verify_prompt_with_clip
-
 def truncate_tokens_clean(text: str, tokenizer, max_tokens: int = 70) -> str:
     """Truncate text to `max_tokens` without triggering HF `> 77` sequence warnings."""
     if not text:
@@ -123,47 +121,6 @@ def build_vlm_visual_prompts(
     return context_rgb, isolated_rgb, panel_rgb
 
 
-def build_oracle_vlm_prompts(
-    image: np.ndarray,
-    visible_mask: np.ndarray,
-    occluded_mask: np.ndarray,
-    target_size: int = 384,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Build exact-occlusion visual prompts for Qwen3-VL + clean isolated crop for CLIP."""
-    vis = np.asarray(visible_mask, dtype=bool)
-    occ = np.asarray(occluded_mask, dtype=bool) & (~vis)
-    amodal = vis | occ
-
-    highlighted = _render_censored_scene(image, vis, occ)
-    ctx_roi = compute_square_roi(amodal, image.shape, context_scale=2.0, min_crop=192, full_frame_threshold=0.92)
-    ctx_patch = extract_square_roi(highlighted, ctx_roi, pad_value=48)
-    context_rgb = resize_array(ctx_patch, (target_size, target_size), mode="linear")
-
-    ay1, ax1, ay2, ax2 = mask_bbox(amodal)
-    ah, aw = ay2 - ay1 + 1, ax2 - ax1 + 1
-    bp_side = max(64, int(round(max(ah, aw) * 1.24)))
-    bp_roi = {
-        "y0": ((ay1 + ay2) // 2) - bp_side // 2,
-        "x0": ((ax1 + ax2) // 2) - bp_side // 2,
-        "size": bp_side,
-        "is_full_frame": False,
-    }
-    blueprint_scene = np.full_like(image, 255, dtype=np.uint8)
-    if occ.any():
-        blueprint_scene[occ] = np.array([224, 236, 252], dtype=np.uint8)
-        occ_border = occ & (~binary_erode(occ, 2))
-        blueprint_scene[occ_border] = np.array([75, 135, 225], dtype=np.uint8)
-    blueprint_scene[vis] = image[vis]
-    bp_patch = extract_square_roi(blueprint_scene, bp_roi, pad_value=255)
-    blueprint_rgb = resize_array(bp_patch, (target_size, target_size), mode="linear")
-
-    isolated_vis_rgb = _render_isolated_visible_crop(image, vis, target_size)
-
-    sep = np.full((target_size, 6, 3), 220, dtype=np.uint8)
-    panel_rgb = np.concatenate([context_rgb, sep, blueprint_rgb, sep, isolated_vis_rgb], axis=1)
-    return context_rgb, blueprint_rgb, isolated_vis_rgb, panel_rgb
-
-
 def _generate_qwen_vl(vlm, image_a: np.ndarray, image_b: np.ndarray, instruction: str, max_new_tokens: int) -> str:
     import torch
     from qwen_vl_utils import process_vision_info
@@ -202,7 +159,7 @@ def _generate_qwen_vl(vlm, image_a: np.ndarray, image_b: np.ndarray, instruction
     )[0].strip()
 
 
-def run_blind_vlm_reasoning(
+def run_basic_vlm_reasoning(
     vlm,
     context_rgb: np.ndarray,
     isolated_rgb: np.ndarray,
@@ -231,37 +188,6 @@ def run_blind_vlm_reasoning(
         "PROMPT: <concise description of the complete unoccluded target object on a white background>"
     )
     raw_output = _generate_qwen_vl(vlm, context_rgb, isolated_rgb, instruction, max_new_tokens=140)
-    return parse_structured_vlm_reasoning(raw_output, fallback_query=user_query)
-
-
-def run_oracle_vlm_reasoning(
-    vlm,
-    context_rgb: np.ndarray,
-    blueprint_rgb: np.ndarray,
-    user_query: str = "",
-) -> dict[str, str]:
-    hint_line = f"Optional category hint: '{user_query.strip()}'.\n" if user_query and user_query.strip() else ""
-    instruction = (
-        "You are guiding exact-mask amodal appearance completion for a partially occluded object.\n"
-        "- Image 1 shows the scene where ONLY the target object's visible pixels are inside a BRIGHT GREEN "
-        "outline, and the exact occluded region to restore is censored by diagonal gray stripes inside YELLOW.\n"
-        "- Image 2 shows the target object isolated on pure white, with the exact missing silhouette marked in "
-        "LIGHT SKY-BLUE next to the visible object pixels.\n"
-        f"{hint_line}"
-        "CRITICAL RULES:\n"
-        "1. Identify ONLY the target object shown in Image 2 (never describe any removed foreground occluder).\n"
-        "2. Use the exact LIGHT SKY-BLUE silhouette in Image 2 to see which anatomical/structural part is missing.\n"
-        "3. Write PROMPT as a concise (12-26 words) studio photo description of the COMPLETE, UNOCCLUDED target "
-        "object on a plain white background, matching the exact colors, materials, and lighting in Image 2.\n"
-        "4. If the target object is a container, takeout box, tray, bowl, plate, or dish whose interior is "
-        "marked in light blue, describe it as EMPTY and clean inside (NEVER imagine food or items inside it).\n"
-        "5. Do NOT mention masks, stripes, outlines, or light-blue regions in PROMPT.\n\n"
-        "Respond in this exact 3-line format:\n"
-        "OBJECT: <short noun phrase naming the target object>\n"
-        "OCCLUDED_PARTS: <one short sentence naming the exact missing part shown in light blue>\n"
-        "PROMPT: <concise description of the complete unoccluded target object on a white background>"
-    )
-    raw_output = _generate_qwen_vl(vlm, context_rgb, blueprint_rgb, instruction, max_new_tokens=140)
     return parse_structured_vlm_reasoning(raw_output, fallback_query=user_query)
 
 
@@ -298,40 +224,22 @@ def run_target_aware_critique(
     critic_completed_rgb: np.ndarray,
     context_highlight_rgb: np.ndarray,
     object_name: str,
-    oracle_mode: bool = False,
 ) -> dict:
-    if oracle_mode:
-        instruction = (
-            f"You are a strict quality critic for mask-guided amodal appearance completion of a '{object_name}'.\n"
-            "- Image 1 shows the reconstructed complete target object isolated on a white background.\n"
-            "- Image 2 shows the scene where the target's visible region is inside BRIGHT GREEN and the removed "
-            "foreground occluder is covered by a diagonal striped censor mask inside YELLOW.\n\n"
-            "Evaluate ONLY the reconstructed target object in Image 1 on a 0-10 integer scale:\n"
-            "1. STRUCTURAL: internal anatomical/structural continuity across the reconstructed region.\n"
-            "2. TEXTURE: seamless color, material, and lighting transition between visible and restored parts (penalize seams, gray smudges, or hallucinated items).\n"
-            "3. CONTEXT: semantic fidelity to the BRIGHT GREEN target object in Image 2 (note: if the target is a container/tray/dish, a clean EMPTY interior is 10/10 correct).\n\n"
-            "Respond EXACTLY in this 4-line format:\n"
-            "STRUCTURAL: <int>\n"
-            "TEXTURE: <int>\n"
-            "CONTEXT: <int>\n"
-            "FEEDBACK: <one short actionable fix for texture/color continuity, or 'good' if seamless>"
-        )
-    else:
-        instruction = (
-            f"You are a strict quality critic for amodal object completion of a '{object_name}'.\n"
-            "- Image 1 shows the reconstructed complete target object isolated on a white background.\n"
-            "- Image 2 shows the local scene where the target's visible region is inside a BRIGHT GREEN outline "
-            "and the removed foreground occluder is covered by a diagonal striped censor mask inside YELLOW.\n\n"
-            "Evaluate ONLY the reconstructed target object in Image 1 on a 0-10 integer scale:\n"
-            "1. STRUCTURAL: whole-object shape plausibility, natural proportions, and clean silhouette.\n"
-            "2. TEXTURE: color, material, and lighting continuity between visible and completed regions (penalize flat gray patches or hallucinated foreign items).\n"
-            "3. CONTEXT: semantic consistency with the BRIGHT GREEN target object in Image 2 (note: if the target is a container/tray/dish, a clean EMPTY interior is 10/10 correct because the item inside was the removed occluder).\n\n"
-            "Respond EXACTLY in this 4-line format:\n"
-            "STRUCTURAL: <int>\n"
-            "TEXTURE: <int>\n"
-            "CONTEXT: <int>\n"
-            "FEEDBACK: <one short actionable fix for the object appearance, or 'good' if seamless>"
-        )
+    instruction = (
+        f"You are a strict quality critic for mask-guided amodal appearance completion of a '{object_name}'.\n"
+        "- Image 1 shows the reconstructed complete target object isolated on a white background.\n"
+        "- Image 2 shows the scene where the target's visible region is inside BRIGHT GREEN and the removed "
+        "foreground occluder is covered by a diagonal striped censor mask inside YELLOW.\n\n"
+        "Evaluate ONLY the reconstructed target object in Image 1 on a 0-10 integer scale:\n"
+        "1. STRUCTURAL: internal anatomical/structural continuity across the reconstructed region.\n"
+        "2. TEXTURE: seamless color, material, and lighting transition between visible and restored parts (penalize seams, gray smudges, or hallucinated items).\n"
+        "3. CONTEXT: semantic fidelity to the BRIGHT GREEN target object in Image 2 (note: if the target is a container/tray/dish, a clean EMPTY interior is 10/10 correct).\n\n"
+        "Respond EXACTLY in this 4-line format:\n"
+        "STRUCTURAL: <int>\n"
+        "TEXTURE: <int>\n"
+        "CONTEXT: <int>\n"
+        "FEEDBACK: <one short actionable fix for texture/color continuity, or 'good' if seamless>"
+    )
 
     output_text = _generate_qwen_vl(vlm, critic_completed_rgb, context_highlight_rgb, instruction, max_new_tokens=120)
     return _parse_critic_response(output_text)

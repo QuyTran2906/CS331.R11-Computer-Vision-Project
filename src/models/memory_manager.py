@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import gc
 
-from src.models.pix2gestalt import Pix2GestaltModel
+from src.models.pix2gestalt_prior import Pix2GestaltModel
 from src.models.qwen_vl import DEFAULT_VLM_ID, QwenVLModel
 
 

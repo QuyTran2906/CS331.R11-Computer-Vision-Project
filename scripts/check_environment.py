@@ -37,7 +37,7 @@ def main():
         "pycocotools",
         "lpips",
         "skimage",
-        "src.models.registry",
+        "src.models.memory_manager",
         "src.pipelines.backend",
     ]:
         importlib.import_module(name)

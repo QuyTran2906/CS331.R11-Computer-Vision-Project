@@ -1,3 +1,0 @@
-= Phương pháp thực nghiệm
-==
-===

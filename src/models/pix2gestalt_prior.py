@@ -105,8 +105,30 @@ import inspect
 from typing import Optional
 import numpy as np
 from PIL import Image
-from src.stages.shape_consensus import prepare_pix2gestalt_roi_inputs
-from src.vision.roi import compute_square_roi, paste_square_roi
+from src.vision.image_ops import resize_array
+from src.vision.roi import compute_square_roi, extract_square_roi, paste_square_roi
+
+
+def prepare_pix2gestalt_roi_inputs(
+    image: np.ndarray,
+    visible_mask: np.ndarray,
+    roi: dict[str, int | bool],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Extract and resize `(256, 256)` RGB scene crop and 3-channel binary visible mask."""
+    roi_img = extract_square_roi(image, roi, pad_value=(127, 127, 127))
+    roi_vis = extract_square_roi(visible_mask.astype(np.uint8) * 255, roi, pad_value=0)
+
+    resized_img = resize_array(roi_img, (256, 256), mode="area")
+    resized_vis = resize_array(roi_vis, (256, 256), mode="nearest")
+    # Guarantee at least one foreground pixel survives 256x256 downsampling.
+    if not (resized_vis > 127).any() and roi_vis.any():
+        ys, xs = np.where(roi_vis > 127)
+        cy = int(round(ys.mean() * 255.0 / max(roi_vis.shape[0] - 1, 1)))
+        cx = int(round(xs.mean() * 255.0 / max(roi_vis.shape[1] - 1, 1)))
+        resized_vis[np.clip(cy, 0, 255), np.clip(cx, 0, 255)] = 255
+    resized_vis = ((resized_vis > 127).astype(np.uint8)) * 255
+    rgb_vis_256 = np.repeat(resized_vis[:, :, None], 3, axis=2)
+    return resized_img, rgb_vis_256
 
 
 def synthesize_amodal_prior(

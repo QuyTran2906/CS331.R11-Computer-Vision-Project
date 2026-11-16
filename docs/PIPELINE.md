@@ -22,5 +22,4 @@ Memory manager nạp model theo nhu cầu, giữ trọng số ở RAM hệ thố
 chuyển stage, giải phóng GPU trước khi chuyển model kế tiếp. Cách này giảm
 VRAM đỉnh; giới hạn RAM còn phụ thuộc runtime.
 
-Các tên import cũ còn để các script và kiểm thử lịch sử hoạt động. Dùng file
-cấu hình ở thư mục chính cho thí nghiệm mới.
+Chỉ ba cấu hình chính được lưu trong repo. Ô 7 có thể tạo cấu hình V3 tắt IP-Adapter trong thư mục kết quả để đối chứng.

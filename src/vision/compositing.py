@@ -87,28 +87,3 @@ def adaptive_seam_blend(
     ).astype(np.uint8)
     result[amodal] = blended[amodal]
     return result
-
-
-def compose_cropped_for_critic(
-    blended_rgb: np.ndarray,
-    amodal_mask: np.ndarray,
-    target_size: int = 448,
-) -> np.ndarray:
-    """Place completed object on a white studio canvas and zoom tightly to `amodal_mask`."""
-    amodal = np.asarray(amodal_mask, dtype=bool)
-    canvas = np.full_like(blended_rgb, 255, dtype=np.uint8)
-    canvas[amodal] = blended_rgb[amodal]
-    if not amodal.any():
-        return resize_array(canvas, (target_size, target_size), mode="linear")
-
-    ay1, ax1, ay2, ax2 = mask_bbox(amodal)
-    ah, aw = ay2 - ay1 + 1, ax2 - ax1 + 1
-    side = max(96, int(round(max(ah, aw) * 1.25)))
-    roi = {
-        "y0": ((ay1 + ay2) // 2) - side // 2,
-        "x0": ((ax1 + ax2) // 2) - side // 2,
-        "size": side,
-        "is_full_frame": False,
-    }
-    patch = extract_square_roi(canvas, roi, pad_value=255)
-    return resize_array(patch, (target_size, target_size), mode="linear")

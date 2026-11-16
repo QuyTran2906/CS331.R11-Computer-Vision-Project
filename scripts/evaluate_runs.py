@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.eval.appearance_metrics import POLICY, PROTOCOL, compute_visible_appearance_metrics
-from src.evaluation.comparison import auto_restore_drive_backups
+from src.evaluation.backups import auto_restore_drive_backups
 from src.eval.metrics import compute_appearance_coherence_metrics
 from src.evaluation.reporting import occlusion_bin, write_json, write_reports
 from src.evaluation.runner import read_mask, read_rgb, sha
@@ -112,7 +112,7 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, default=ROOT / "outputs/train_smoke/manifest.json")
+    parser.add_argument("--manifest", type=Path, default=ROOT / "outputs/dev50/manifest.json")
     parser.add_argument("--runs-root", type=Path, default=ROOT / "outputs/runs")
     parser.add_argument("--profile", required=True, help="Explicit profile ID or path; never automatically pick another experiment")
     parser.add_argument("--limit", type=int, help="Default: all records in manifest")

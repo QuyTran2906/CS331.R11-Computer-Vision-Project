@@ -10,17 +10,18 @@ from unittest.mock import patch
 
 import numpy as np
 
-from src.stages.qwen_prompts import (parse_micro_attributes, parse_strict_critic,
-    run_micro_reasoning, run_strict_critic)
-from src.stages.sd2_advanced import validate_v2_config, blend_latents, ddim_previous_timestep
-from src.pipelines.v2_completer import V2AmodalCompleter, critic_panels
+from src.vlm.micro_attributes import parse_micro_attributes, run_micro_reasoning
+from src.vlm.strict_critic import parse_strict_critic, run_strict_critic
+from src.models.sd15_ip_adapter import validate_v2_config, blend_latents, ddim_previous_timestep
+from src.pipelines.v3_proposed import V3Proposed
+from src.pipelines.v2_pipeline import critic_panels
 from src.evaluation.critic_logs import update_critic_log
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def config():
-    return json.loads((ROOT / "archive_sd15/configs/oracle_mask_v2.json").read_text())
+    return json.loads((ROOT / "configs/v3_sd15_proposed.json").read_text())
 
 
 def judgment(score=8, decision="PASS"):
@@ -30,9 +31,9 @@ def judgment(score=8, decision="PASS"):
 
 class V2Tests(unittest.TestCase):
     def test_sd15_baseline_uses_only_inpainting_and_correct_metadata(self):
-        from src.pipelines.sd15_direct_completer import SD15DirectCompleter
+        from src.pipelines.v1_direct import V1Direct
         from src.evaluation.runner import _uses_occluded_mask_input
-        cfg = json.loads((ROOT / "archive_sd15/configs/sd15_direct.json").read_text())
+        cfg = json.loads((ROOT / "configs/v1_sd15_direct.json").read_text())
         self.assertTrue(_uses_occluded_mask_input(cfg))
         image = np.full((48, 64, 3), 140, np.uint8)
         vis = np.zeros((48, 64), bool)
@@ -41,29 +42,16 @@ class V2Tests(unittest.TestCase):
         hidden[10:30, 20:30] = True
         models = SimpleNamespace(device="cpu", pipe=object())
         with patch("src.pipelines.v1_direct.run_inpaint_roi_pass", return_value=image) as call:
-            result = SD15DirectCompleter(models, cfg).complete(image, vis, hidden)
+            result = V1Direct(models, cfg).complete(image, vis, hidden)
         call.assert_called_once()
         self.assertIn("SD1.5 Direct", result["_trace"]["backend"])
         self.assertEqual(result["critique_history"], [])
         self.assertEqual(result["_trace"]["refinement_scheduler"], "DDIMScheduler")
 
-    def test_v1_configs_are_exact_aliases_and_sd2_adapter_is_rejected(self):
-        for mode in ("oracle_mask", "improved"):
-            self.assertEqual((ROOT / f"archive_sd2/configs/{mode}.json").read_bytes(),
-                             (ROOT / f"archive_sd2/configs/{mode}_v1.json").read_bytes())
-            cfg = json.loads((ROOT / f"archive_sd15/configs/{mode}_v2.json").read_text())
-            validate_v2_config(cfg)
+    def test_non_sd15_backbone_is_rejected(self):
         cfg = config()
-        cfg["inpainting_model_id"] = "sd2-community/stable-diffusion-2-inpainting"
-        with self.assertRaisesRegex(ValueError, "incompatible with SD2"):
-            validate_v2_config(cfg)
-        full = config()
-        no_ip = json.loads((ROOT / "archive_sd15/configs/oracle_mask_v2_no_ip.json").read_text())
-        self.assertEqual({key for key in full if full[key] != no_ip[key]}, {"use_ip_adapter"})
-        self.assertTrue(full["use_ip_adapter"])
-        self.assertEqual(full["ip_adapter_weight_name"], "ip-adapter-plus_sd15.safetensors")
-        cfg["use_ip_adapter"] = "false"
-        with self.assertRaisesRegex(ValueError, "JSON boolean"):
+        cfg["inpainting_model_id"] = "unsupported-model"
+        with self.assertRaisesRegex(ValueError, "SD1.5"):
             validate_v2_config(cfg)
 
     def test_micro_json_and_format_repair_do_not_invent_attributes(self):
@@ -101,7 +89,7 @@ class V2Tests(unittest.TestCase):
     def make_completer(self, cfg=None):
         cfg = cfg or config()
         models = SimpleNamespace(device="cpu", pipe=SimpleNamespace(tokenizer=None))
-        completer = V2AmodalCompleter(models, cfg)
+        completer = V3Proposed(models, cfg)
         image = np.full((48, 64, 3), [90, 120, 150], np.uint8)
         vis = np.zeros((48, 64), bool)
         vis[10:30, 8:25] = True
@@ -110,7 +98,7 @@ class V2Tests(unittest.TestCase):
         context = np.full((384, 384, 3), 200, np.uint8)
         completer._reason = lambda *a: (dict(object_name="table", raw="json", sd_prompt="brown wood",
                                              valid_json=True), context, context, context)
-        completer.geometry._verify_prompt_clip = lambda *a, **kw: ("table", {"verified": True})
+        completer._verify_prompt = lambda *a, **kw: ("table", {"verified": True})
         prior = dict(seed_canvas=image.copy(), unfilled_fraction=.5, ref_p90_luma=150)
         completer._prior = lambda *a: (vis | occ, {"diagnostics": {}}, prior)
         calls = []
@@ -149,18 +137,10 @@ class V2Tests(unittest.TestCase):
         self.assertFalse(result["critic_accepted"])  # high scores plus explicit FAIL remain FAIL
         self.assertEqual(result["_trace"]["outcome"], "exhausted_retries")
 
-    def test_blind_mode_rejects_gt_mask_before_reasoning(self):
-        cfg = config()
-        cfg.update(pipeline_mode="improved", use_occluded_mask_input=False)
-        completer, image, vis, occ, _ = self.make_completer(cfg)
-        with self.assertRaisesRegex(ValueError, "Blind V2"):
-            completer.complete(image, vis, occluded_mask=occ)
-        completer._critique = lambda *a: parse_strict_critic(judgment())
-        completer._prior = lambda *a: (vis | occ, {"diagnostics": {}},
-            dict(seed_canvas=image, dropout_fraction=.5, ref_p90_luma=150))
-        with contextlib.redirect_stdout(io.StringIO()):
-            result = completer.complete(image, vis)
-        self.assertEqual(result["_trace"]["backend"], "V2 blind")
+    def test_hidden_mask_is_required(self):
+        completer, image, vis, _, _ = self.make_completer()
+        with self.assertRaisesRegex(ValueError, "hidden mask"):
+            completer.complete(image, vis)
 
     def test_latent_blend_keeps_editable_values_and_ddim_uses_post_step_level(self):
         generated = np.full((1, 4, 2, 2), 9.)

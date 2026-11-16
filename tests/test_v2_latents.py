@@ -13,7 +13,7 @@ class LatentCallbackTests(unittest.TestCase):
         import torch
         from PIL import Image
         from diffusers import AutoencoderKL, DDIMScheduler, StableDiffusionInpaintPipeline, UNet2DConditionModel
-        from src.stages.sd2_advanced import AdvancedInpaintPass, configure_v2_pipe
+        from src.models.sd15_ip_adapter import AdvancedInpaintPass, configure_v2_pipe
         import json
         from pathlib import Path
 
@@ -88,7 +88,7 @@ class LatentCallbackTests(unittest.TestCase):
     def test_ddim_callback_at_full_and_partial_strength(self):
         import torch
         from diffusers import DDIMScheduler
-        from src.stages.sd2_advanced import ReferenceLatentBlender
+        from src.models.sd15_ip_adapter import ReferenceLatentBlender
 
         for strength in (1., .24, .62):
             scheduler = DDIMScheduler(num_train_timesteps=1000, set_alpha_to_one=True,

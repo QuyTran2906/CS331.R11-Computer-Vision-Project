@@ -25,11 +25,12 @@ from src.vlm.strict_critic import parse_strict_critic
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = dict(v1="v1_sd15_direct", v2="v2_sd15_pipeline",
-             v3="v3_sd15_proposed", v3_no_ip="v3_ablation_no_ip")
+             v3="v3_sd15_proposed")
 
 
 def configs():
-    return {key: json.loads((ROOT / "configs" / f"{name}.json").read_text()) for key, name in NAMES.items()}
+    values = {key: json.loads((ROOT / "configs" / f"{name}.json").read_text()) for key, name in NAMES.items()}
+    return dict(values, v3_no_ip=dict(values["v3"], use_ip_adapter=False))
 
 
 class VersionTests(unittest.TestCase):
@@ -43,7 +44,7 @@ class VersionTests(unittest.TestCase):
                 validate_v2_config(cfgs[role])
             def new_models(**kwargs):
                 return SimpleNamespace(device=kwargs["device"])
-            with patch.dict("sys.modules", {"torch": cuda}),                  patch("src.models.registry.FoundationModels", side_effect=new_models):
+            with patch.dict("sys.modules", {"torch": cuda}),                  patch("src.pipelines.backend.FoundationModels", side_effect=new_models):
                 backend = AmodalBackend(cfgs[role])
                 self.assertIs(type(backend.completer), cls)
         cfgs["v3_no_ip"]["guidance_scale"] = 8

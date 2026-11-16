@@ -8,16 +8,16 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from src.pipelines.oracle_completer import OracleMaskAmodalCompleter
-from src.pipelines.improved_completer import ImprovedAmodalCompleter
-from src.stages.appearance_prior import build_appearance_prior, build_oracle_appearance_seed
-from src.stages.inpaint_refiner import refine_exact_mask, refine_roi_blind
+from src.models.pix2gestalt_prior import synthesize_amodal_prior
+from src.vlm.clip_verify import verify_prompt_with_clip
+from src.stages.appearance_prior import build_oracle_appearance_seed
+from src.stages.inpaint_refiner import refine_exact_mask
 from src.models.sd15_ip_adapter import validate_v2_config
-from src.vlm.qwen_basic import (build_vlm_visual_prompts, run_blind_vlm_reasoning,
+from src.vlm.qwen_basic import (build_vlm_visual_prompts, run_basic_vlm_reasoning,
     run_target_aware_critique, truncate_tokens_clean, DEFAULT_NEGATIVE_PROMPT)
 from src.vision.compositing import adaptive_seam_blend, finalize_rgba
 from src.vision.roi import extract_square_roi, mask_bbox
-from src.evaluation.metrics import compute_appearance_coherence_metrics
+from src.eval.metrics import compute_appearance_coherence_metrics
 
 
 def critic_panels(image, visible, amodal, completed, size=384):
@@ -46,14 +46,11 @@ def candidate_rank(critique):
 
 class V2Pipeline:
     def _describe(self, context, isolated, query):
-        return run_blind_vlm_reasoning(self.models.vlm, context, isolated, user_query=query)
+        return run_basic_vlm_reasoning(self.models.vlm, context, isolated, user_query=query)
 
     def __init__(self, models, config):
         validate_v2_config(config)
         self.models, self.config, self.device = models, config, models.device
-        self.oracle = config["pipeline_mode"] == "oracle_mask"
-        self.geometry = OracleMaskAmodalCompleter(models, config) if self.oracle else ImprovedAmodalCompleter(models, config)
-
     def _reason(self, image, vis, query):
         # Step 1 uses only image + visible mask; no hidden-mask geometry or labels.
         context, isolated, panel = build_vlm_visual_prompts(image, vis, vis, target_size=384)
@@ -61,15 +58,14 @@ class V2Pipeline:
         return reasoning, context, isolated, panel
 
     def _prior(self, image, vis, occ, job):
-        if self.oracle:
-            amodal = vis | occ
-            raw = self.geometry._synthesize_amodal_prior(image, vis, amodal, job)
-            info = build_oracle_appearance_seed(image, vis, occ, raw["p2g_rgb_full"], raw["p2g_alpha_full"])
-        else:
-            raw = self.geometry._predict_shape_and_prior(image, vis, job)
-            amodal = np.asarray(raw["amodal_mask"], bool) | vis
-            info = build_appearance_prior(image, vis, amodal, raw["p2g_rgb_full"], raw["p2g_alpha_full"])
+        amodal = vis | occ
+        raw = synthesize_amodal_prior(self.models, self.config, image, vis, amodal, job)
+        info = build_oracle_appearance_seed(image, vis, occ, raw["p2g_rgb_full"], raw["p2g_alpha_full"])
         return amodal, raw, info
+
+    def _verify_prompt(self, isolated, reasoning, query):
+        return verify_prompt_with_clip(self.models.clip_model, self.models.clip_processor,
+                                       self.device, isolated, reasoning, user_query=query)
 
     def _inpaint_pipe(self, isolated, seed):
         return self.models.pipe
@@ -81,15 +77,12 @@ class V2Pipeline:
                       prompt=prompt, negative_prompt=negative, strength=strength, guidance_scale=guidance,
                       num_inference_steps=int(self.config.get("num_inference_steps", 28)), seed=seed,
                       ref_p90_luma=float(prior["ref_p90_luma"]))
-        if self.oracle:
-            rgb = refine_exact_mask(**common, occluded_mask=amodal & ~vis,
-                                               unfilled_mask=prior["unfilled_mask"])
-        else:
-            rgb = refine_roi_blind(**common, amodal_mask=amodal, dropout_mask=prior["dropout_mask"])
+        rgb = refine_exact_mask(**common, occluded_mask=amodal & ~vis,
+                                unfilled_mask=prior["unfilled_mask"])
         return rgb, getattr(pipe, "diagnostics", {})
 
     def _critique(self, panels, context, name):
-        old = run_target_aware_critique(self.models.vlm, panels[2], context, name, oracle_mode=self.oracle)
+        old = run_target_aware_critique(self.models.vlm, panels[2], context, name)
         accepted = old["score"] >= self.config["critique_threshold"]
         return dict(old, accepted=accepted, final_decision="PASS" if accepted else "REJECT",
                     reason=old["feedback"], repair_instruction=old["feedback"], valid_json=None)
@@ -99,14 +92,9 @@ class V2Pipeline:
         vis = np.asarray(visible_mask, bool)
         if image.dtype != np.uint8 or image.shape != (*vis.shape, 3) or not vis.any():
             raise ValueError("V2 requires RGB uint8 and a nonempty matching visible mask")
-        if self.oracle:
-            if occluded_mask is None or np.asarray(occluded_mask).shape != vis.shape:
-                raise ValueError("Mask-given V2 requires a matching hidden mask")
-            occ = np.asarray(occluded_mask, bool) & ~vis
-        else:
-            if occluded_mask is not None:
-                raise ValueError("Blind V2 must not receive a GT hidden mask")
-            occ = None
+        if occluded_mask is None or np.asarray(occluded_mask).shape != vis.shape:
+            raise ValueError("A matching hidden mask is required")
+        occ = np.asarray(occluded_mask, bool) & ~vis
         job = Path(job_dir) if job_dir is not None else None
         if job:
             job.mkdir(parents=True, exist_ok=True)
@@ -131,15 +119,15 @@ class V2Pipeline:
 
         # Preserve CLIP verification as a guard on object identity. When Qwen is
         # accepted, retain its attributes even if CLIP prefers a shorter noun phrase.
-        prompt, clip_info = self.geometry._verify_prompt_clip(isolated, reasoning, user_query=text_query)
+        prompt, clip_info = self._verify_prompt(isolated, reasoning, text_query)
         if self.config["use_micro_attributes"] and clip_info["verified"] and reasoning.get("valid_json"):
             prompt = reasoning["sd_prompt"]
         save_json("prompt_selection.json", dict(prompt=prompt, clip_verification=clip_info))
         tokenizer = self.models.pipe.tokenizer
         base_prompt = truncate_tokens_clean(prompt, tokenizer, max_tokens=60)
         negative = truncate_tokens_clean(DEFAULT_NEGATIVE_PROMPT, tokenizer, max_tokens=70)
-        fraction = float(prior["unfilled_fraction"] if self.oracle else prior["dropout_fraction"])
-        high_strength = self.config.get("unfilled_refine_strength", .62) if self.oracle else self.config.get("dropout_refine_strength", .78)
+        fraction = float(prior["unfilled_fraction"])
+        high_strength = self.config.get("unfilled_refine_strength", .62)
         strength = float(high_strength if fraction >= .25 else self.config.get("prior_refine_strength", .24))
         history, best, best_critique, selected = [], None, None, None
         limit = self.config["max_critic_iter"] if self.config.get("enable_critic", True) else 1
@@ -189,7 +177,7 @@ class V2Pipeline:
         trace = dict(pad_info=pad, pipeline_version=self.config["pipeline_version"], synthesis_attempts=len(history),
                      retries=max(0, len(history) - 1), selected_attempt=selected, outcome=outcome,
                      critic_accepted=accepted, critique_history=history, shape_diagnostics=raw_prior["diagnostics"],
-                     backend=f"V{self.config['pipeline_version']} " + ("mask-given" if self.oracle else "blind"),
+                     backend=f"V{self.config['pipeline_version']} mask-given",
                      seconds=round(time.perf_counter() - t0, 3),
                      coherence=compute_appearance_coherence_metrics(image, vis, missing, best[:, :, :3]))
         save_json(f"v{self.config['pipeline_version']}_selection.json", {k: trace[k] for k in

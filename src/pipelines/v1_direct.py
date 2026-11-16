@@ -10,7 +10,7 @@ from PIL import Image
 
 from src.models.sd15_ip_adapter import SD15_INPAINTING
 from src.stages.inpaint_refiner import run_inpaint_roi_pass
-from src.stages.vlm_guidance import DEFAULT_NEGATIVE_PROMPT
+from src.vlm.qwen_basic import DEFAULT_NEGATIVE_PROMPT
 from src.vision.compositing import adaptive_seam_blend, finalize_rgba
 from src.vision.image_ops import binary_dilate, binary_erode
 from src.vision.roi import mask_bbox
