@@ -11,7 +11,7 @@ from PIL import Image
 from src.pipelines.oracle_completer import OracleMaskAmodalCompleter
 from src.pipelines.improved_completer import ImprovedAmodalCompleter
 from src.stages.appearance_prior import build_appearance_prior, build_oracle_appearance_seed
-from src.stages.sd2_refiner import refine_exact_mask_sd2_oracle, refine_roi_sd2_blind
+from src.stages.inpaint_refiner import refine_exact_mask, refine_roi_blind
 from src.models.sd15_ip_adapter import validate_v2_config
 from src.vlm.qwen_basic import (build_vlm_visual_prompts, run_blind_vlm_reasoning,
     run_target_aware_critique, truncate_tokens_clean, DEFAULT_NEGATIVE_PROMPT)
@@ -82,10 +82,10 @@ class V2Pipeline:
                       num_inference_steps=int(self.config.get("num_inference_steps", 28)), seed=seed,
                       ref_p90_luma=float(prior["ref_p90_luma"]))
         if self.oracle:
-            rgb = refine_exact_mask_sd2_oracle(**common, occluded_mask=amodal & ~vis,
+            rgb = refine_exact_mask(**common, occluded_mask=amodal & ~vis,
                                                unfilled_mask=prior["unfilled_mask"])
         else:
-            rgb = refine_roi_sd2_blind(**common, amodal_mask=amodal, dropout_mask=prior["dropout_mask"])
+            rgb = refine_roi_blind(**common, amodal_mask=amodal, dropout_mask=prior["dropout_mask"])
         return rgb, getattr(pipe, "diagnostics", {})
 
     def _critique(self, panels, context, name):

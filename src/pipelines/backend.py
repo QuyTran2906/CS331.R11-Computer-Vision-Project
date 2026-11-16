@@ -1,4 +1,4 @@
-"""Lazy foundation-model dispatcher for blind, mask-given, and SD2 Direct modes."""
+"""Lazy foundation-model dispatcher for direct, blind, and mask-guided inpainting."""
 from __future__ import annotations
 
 import os

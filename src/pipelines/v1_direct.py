@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 
 from src.models.sd15_ip_adapter import SD15_INPAINTING
-from src.stages.sd2_refiner import _run_sd2_roi_pass
+from src.stages.inpaint_refiner import run_inpaint_roi_pass
 from src.stages.vlm_guidance import DEFAULT_NEGATIVE_PROMPT
 from src.vision.compositing import adaptive_seam_blend, finalize_rgba
 from src.vision.image_ops import binary_dilate, binary_erode
@@ -22,11 +22,11 @@ DEFAULT_PROMPT = (
 
 
 def prepare_direct_inputs(image, visible_mask, occluded_mask):
-    """Same SD2 ROI/mask geometry as oracle refinement, without any appearance prior."""
+    """Same ROI/mask geometry as oracle refinement, without any appearance prior."""
     vis = np.asarray(visible_mask, dtype=bool)
     occ = np.asarray(occluded_mask, dtype=bool)
     if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
-        raise ValueError("SD2 Direct requires uint8 HxWx3 RGB")
+        raise ValueError("Direct inpainting requires uint8 HxWx3 RGB")
     if vis.shape != image.shape[:2] or occ.shape != vis.shape or not vis.any():
         raise ValueError("Invalid/empty visible mask or mismatched hidden mask")
     if (vis & occ).any():
@@ -46,14 +46,15 @@ def prepare_direct_inputs(image, visible_mask, occluded_mask):
     return canvas, vis, occ, amodal, roi, inpaint_region
 
 
-class SD2DirectCompleter:
-    baseline_name = "SD2 Direct"
-    settings_filename = "sd2_settings.json"
+class DirectInpaintCompleter:
+    baseline_name = "Direct inpainting"
+    settings_filename = "inpaint_settings.json"
+    timing_key = "inpaint_seconds"
 
     def __init__(self, models, config):
         self.models, self.config = models, config
         if config.get("text_query_policy", "empty") != "empty" or config.get("enable_critic", False):
-            raise ValueError("SD2 Direct uses a fixed prompt and no critic")
+            raise ValueError(f"{self.baseline_name} uses a fixed prompt and no critic")
         self.prompt = config.get("prompt", DEFAULT_PROMPT)
         self.strength = float(config.get("strength", 1.0))
         self.guidance = float(config.get("guidance_scale", 7.0))
@@ -61,11 +62,11 @@ class SD2DirectCompleter:
         if not isinstance(self.prompt, str) or not self.prompt.strip():
             raise ValueError("A fixed nonempty prompt is required")
         if not 0.16 <= self.strength <= 1 or self.steps < 1 or self.guidance < 0:
-            raise ValueError("Invalid SD2 baseline inference settings")
+            raise ValueError("Invalid direct inpainting settings")
 
     def complete(self, image, visible_mask, occluded_mask, job_dir=None):
         if occluded_mask is None:
-            raise ValueError("SD2 Direct requires an input hidden mask")
+            raise ValueError(f"{self.baseline_name} requires an input hidden mask")
         started = time.perf_counter()
         canvas, vis, occ, amodal, roi, inpaint_region = prepare_direct_inputs(image, visible_mask, occluded_mask)
         negative = self.config.get("negative_prompt", DEFAULT_NEGATIVE_PROMPT)
@@ -87,7 +88,7 @@ class SD2DirectCompleter:
             model_load_seconds = time.perf_counter() - load_started
             print(f"[{self.baseline_name}] One pass, ROI={roi['size']}, steps={self.steps}, strength={self.strength}", flush=True)
             inference_started = time.perf_counter()
-            generated = _run_sd2_roi_pass(
+            generated = run_inpaint_roi_pass(
                 pipe=pipe, device=self.models.device, seed_canvas=canvas,
                 inpaint_region=inpaint_region, roi=roi, prompt=self.prompt,
                 negative_prompt=negative, strength=self.strength, guidance_scale=self.guidance,
@@ -108,7 +109,7 @@ class SD2DirectCompleter:
                     _trace=dict(backend=f"{self.baseline_name} (fixed prompt, input hidden mask)", pad_info={},
                                 synthesis_attempts=int(occ.any()), settings=settings,
                                 model_load_seconds=round(model_load_seconds, 3),
-                                sd2_seconds=round(inference_seconds, 3),
+                                **{self.timing_key: round(inference_seconds, 3)},
                                 total_seconds=round(time.perf_counter() - started, 3)))
 
 
@@ -118,12 +119,13 @@ def validate_sd15_direct(config):
     if config.get("enable_critic") or config.get("text_query_policy", "empty") != "empty":
         raise ValueError("SD1.5 Direct requires a fixed category-free prompt and no critic")
     if any(config.get(key) for key in ("use_micro_attributes", "use_ip_adapter", "use_latent_blending")):
-        raise ValueError("SD1.5 Direct cannot enable V2 conditioning features")
+        raise ValueError("SD1.5 Direct cannot enable extra conditioning features")
 
 
-class SD15DirectCompleter(SD2DirectCompleter):
+class SD15DirectCompleter(DirectInpaintCompleter):
     baseline_name = "SD1.5 Direct"
     settings_filename = "sd15_settings.json"
+    timing_key = "sd15_seconds"
 
     def __init__(self, models, config):
         validate_sd15_direct(config)
@@ -131,7 +133,6 @@ class SD15DirectCompleter(SD2DirectCompleter):
 
     def complete(self, *args, **kwargs):
         result = super().complete(*args, **kwargs)
-        result["_trace"]["sd15_seconds"] = result["_trace"].pop("sd2_seconds")
         result["_trace"]["refinement_scheduler"] = "DDIMScheduler"
         return result
 

@@ -12,7 +12,7 @@ from PIL import Image
 
 from src.models.pix2gestalt import load_run_pix2gestalt
 from src.stages.appearance_prior import build_appearance_prior
-from src.stages.sd2_refiner import refine_roi_sd2_blind
+from src.stages.inpaint_refiner import refine_roi_blind
 from src.stages.shape_consensus import (
     fuse_pix2gestalt_predictions,
     prepare_pix2gestalt_roi_inputs,
@@ -137,8 +137,8 @@ class ImprovedAmodalCompleter:
             user_query=user_query,
         )
 
-    def _refine_roi_sd2(self, **kwargs) -> np.ndarray:
-        return refine_roi_sd2_blind(pipe=self.models.pipe, device=self.device, **kwargs)
+    def _refine_roi(self, **kwargs) -> np.ndarray:
+        return refine_roi_blind(pipe=self.models.pipe, device=self.device, **kwargs)
 
     def _critique_target_aware(
         self,
@@ -239,7 +239,7 @@ class ImprovedAmodalCompleter:
                 encoding="utf-8",
             )
 
-        # 4. Hybrid ROI SD2 refinement + Target-Aware Critic loop (keeping best-scored attempt).
+        # 4. Hybrid ROI inpainting refinement + Target-Aware Critic loop (keeping best-scored attempt).
         t_syn0 = time.perf_counter()
         sd_tok = self.models.pipe.tokenizer
         prompt = truncate_tokens_clean(
@@ -284,7 +284,7 @@ class ImprovedAmodalCompleter:
             if job_dir is not None:
                 (job_dir / f"prompt_{attempts:02d}.txt").write_text(prompt, encoding="utf-8")
 
-            inpaint_img = self._refine_roi_sd2(
+            inpaint_img = self._refine_roi(
                 seed_canvas=seed_canvas,
                 visible_mask=vis,
                 amodal_mask=amodal_mask,
@@ -348,7 +348,7 @@ class ImprovedAmodalCompleter:
         t_syn = time.perf_counter() - t_syn0
         t_total = time.perf_counter() - t0
         print(
-            f"[Timing] shape={t_shape:.1f}s | vlm={t_vlm:.1f}s | sd2+critic={t_syn:.1f}s | total={t_total:.1f}s",
+            f"[Timing] shape={t_shape:.1f}s | vlm={t_vlm:.1f}s | inpaint+critic={t_syn:.1f}s | total={t_total:.1f}s",
             flush=True,
         )
 
@@ -379,4 +379,3 @@ class ImprovedAmodalCompleter:
                 "backend": "Blind Improved (ROI + Mask-Guided VLM + Hybrid Prior)",
             },
         }
-

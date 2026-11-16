@@ -28,7 +28,7 @@ def build_appearance_prior(
       styrofoam container) intact.
     - Matches per-channel gain/bias of `p2g_rgb_full` to `image` over `visible_mask`.
     - Pre-fills dropout holes with Telea inpainting and decontaminates the outer
-      foreground edge + a 6-px collar so SD2 never bleeds background white/gray
+      foreground edge + a 6-px collar to help the inpainter avoid bleeding background white/gray
       inward across the object boundary.
     """
     vis = np.asarray(visible_mask, dtype=bool)
@@ -295,4 +295,3 @@ def build_oracle_appearance_seed(
         "color_bias": [round(float(x), 3) for x in bias],
         "ref_p90_luma": round(ref_p90_luma, 2),
     }
-

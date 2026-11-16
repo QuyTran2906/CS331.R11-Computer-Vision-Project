@@ -1,11 +1,11 @@
-"""Modular algorithmic stages for amodal shape consensus, appearance seed, VLM guidance, and SD2 refinement."""
+"""Modular algorithmic stages for amodal shape consensus, appearance seed, VLM guidance, and inpainting refinement."""
 from src.stages.appearance_prior import (
     build_appearance_prior,
     build_oracle_appearance_seed,
 )
-from src.stages.sd2_refiner import (
-    refine_exact_mask_sd2_oracle,
-    refine_roi_sd2_blind,
+from src.stages.inpaint_refiner import (
+    refine_exact_mask,
+    refine_roi_blind,
 )
 from src.stages.shape_consensus import (
     fuse_pix2gestalt_predictions,
@@ -32,12 +32,11 @@ __all__ = [
     "fuse_pix2gestalt_predictions",
     "parse_structured_vlm_reasoning",
     "prepare_pix2gestalt_roi_inputs",
-    "refine_exact_mask_sd2_oracle",
-    "refine_roi_sd2_blind",
+    "refine_exact_mask",
+    "refine_roi_blind",
     "run_blind_vlm_reasoning",
     "run_oracle_vlm_reasoning",
     "run_target_aware_critique",
     "truncate_tokens_clean",
     "verify_prompt_with_clip",
 ]
-

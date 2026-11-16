@@ -53,7 +53,7 @@ class SD2DirectTests(unittest.TestCase):
         self.assertTrue(np.all(canvas[occ] == 127))
         self.assertTrue(np.all(canvas[~amodal] == 255))
         self.assertLess(roi["x0"], 0)
-        with patch("src.stages.sd2_refiner._run_sd2_roi_pass", return_value=canvas) as call:
+        with patch("src.stages.inpaint_refiner.run_inpaint_roi_pass", return_value=canvas) as call:
             refine_exact_mask_sd2_oracle(object(), "cuda", canvas, vis, occ, occ,
                                         "prompt", "negative", 1., 7., 28, 42, 255.)
         self.assertEqual(call.call_args.kwargs["roi"], roi)
@@ -62,7 +62,7 @@ class SD2DirectTests(unittest.TestCase):
     def test_single_pass_uses_only_sd2_and_composites_exact_mask(self):
         generated = np.full_like(self.image, (18, 99, 170))
         with tempfile.TemporaryDirectory() as temp, \
-             patch("src.pipelines.sd2_direct_completer._run_sd2_roi_pass", return_value=generated) as call:
+             patch("src.pipelines.v1_direct.run_inpaint_roi_pass", return_value=generated) as call:
             result = SD2DirectCompleter(OnlySD2Models(), self.config).complete(
                 self.image, self.visible, self.hidden, Path(temp))
             settings = json.loads((Path(temp) / "sd2_settings.json").read_text())
@@ -84,7 +84,7 @@ class SD2DirectTests(unittest.TestCase):
         fake_torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True))
         with patch.dict(sys.modules, {"torch": fake_torch}), \
              patch("src.models.registry.FoundationModels", OnlySD2Models), \
-             patch("src.pipelines.sd2_direct_completer._run_sd2_roi_pass", return_value=self.image) as call:
+             patch("src.pipelines.v1_direct.run_inpaint_roi_pass", return_value=self.image) as call:
             backend = AmodalBackend(self.config)
             backend.complete(self.image, self.visible, "secret category", self.hidden)
             self.assertNotIn("secret category", call.call_args.kwargs["prompt"])
@@ -94,7 +94,7 @@ class SD2DirectTests(unittest.TestCase):
             self.assertEqual(backend.models.releases, 2)
 
     def test_empty_hidden_skips_generation_and_invalid_inputs_fail(self):
-        with patch("src.pipelines.sd2_direct_completer._run_sd2_roi_pass") as call:
+        with patch("src.pipelines.v1_direct.run_inpaint_roi_pass") as call:
             output = SD2DirectCompleter(OnlySD2Models(), self.config).complete(
                 self.image, self.visible, np.zeros_like(self.hidden))
             call.assert_not_called()
@@ -154,7 +154,7 @@ class SD2DirectTests(unittest.TestCase):
                 def complete(self, image, visible, label, occluded_mask=None):
                     return completer.complete(image, visible, occluded_mask, self.job)
 
-            with patch("src.pipelines.sd2_direct_completer._run_sd2_roi_pass", return_value=self.image):
+            with patch("src.pipelines.v1_direct.run_inpaint_roi_pass", return_value=self.image):
                 backend = Backend()
                 for record in records:
                     _, skipped = run_one(record, root, profile, config, backend, profile.name)

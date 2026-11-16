@@ -40,7 +40,7 @@ class V2Tests(unittest.TestCase):
         hidden = np.zeros_like(vis)
         hidden[10:30, 20:30] = True
         models = SimpleNamespace(device="cpu", pipe=object())
-        with patch("src.pipelines.sd2_direct_completer._run_sd2_roi_pass", return_value=image) as call:
+        with patch("src.pipelines.v1_direct.run_inpaint_roi_pass", return_value=image) as call:
             result = SD15DirectCompleter(models, cfg).complete(image, vis, hidden)
         call.assert_called_once()
         self.assertIn("SD1.5 Direct", result["_trace"]["backend"])

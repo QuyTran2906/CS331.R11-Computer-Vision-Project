@@ -34,7 +34,7 @@ def truncate_tokens_clean(text: str, tokenizer, max_tokens: int = 70) -> str:
 
 
 def parse_structured_vlm_reasoning(raw_text: str, fallback_query: str = "") -> dict[str, str]:
-    """Extract `object_name`, `occluded_parts`, and clean SD2 `sd_prompt`."""
+    """Extract `object_name`, `occluded_parts`, and clean diffusion `sd_prompt`."""
     cleaned = re.sub(r"\*+", "", raw_text or "").strip()
 
     obj_match = re.search(r"OBJECT\s*:\s*(.+?)(?:\n|$)", cleaned, re.IGNORECASE)

@@ -48,7 +48,7 @@ class FoundationModels:
             return Pix2GestaltModel(device="cpu")
         if name == "vlm":
             return QwenVLModel(model_id=self.vlm_model_id, device="cpu")
-        if name == "sd2":
+        if name == "inpainting":
             from diffusers import StableDiffusionInpaintPipeline
             print(f"[Models] Loading inpainting pipeline {self.inpainting_model_id}...", flush=True)
             pipe = StableDiffusionInpaintPipeline.from_pretrained(
@@ -100,7 +100,7 @@ class FoundationModels:
 
     @property
     def pipe(self):
-        return self._activate("sd2")
+        return self._activate("inpainting")
 
     @property
     def clip_model(self):

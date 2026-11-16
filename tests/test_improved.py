@@ -339,7 +339,7 @@ class ImprovedPipelineTests(unittest.TestCase):
             {"score": 6.5, "structural": 7.0, "texture": 6.5, "context": 6.0, "feedback": "slight seam", "raw": ""},
             {"score": 4.0, "structural": 4.0, "texture": 4.0, "context": 4.0, "feedback": "worse color", "raw": ""},
         ]
-        completer._refine_roi_sd2 = fake_refine
+        completer._refine_roi = fake_refine
         completer._critique_target_aware = lambda **kwargs: scores.pop(0)
 
         old_torch = sys.modules.get("torch")

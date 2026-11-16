@@ -31,7 +31,7 @@ class FakeModel:
 
 class ModelMemoryTests(unittest.TestCase):
     def make_registry(self, fail=None):
-        registry = FoundationModels("sd2-id", "clip-id")
+        registry = FoundationModels("inpainting-id", "clip-id")
         events, resident, loads = [], set(), []
         def load(name):
             self.assertFalse(resident, "Previous stage must be offloaded before loading next weights")
@@ -55,7 +55,7 @@ class ModelMemoryTests(unittest.TestCase):
         registry.vlm
         self.assertIs(registry.shape_predictor, first)  # next sample reuses weights
         registry.release_gpu()
-        self.assertEqual(loads, ["shape", "vlm", "clip", "sd2"])
+        self.assertEqual(loads, ["shape", "vlm", "clip", "inpainting"])
         self.assertFalse(resident)
         self.assertIsNone(registry._active)
         self.assertEqual(events[:3], [("shape", "cuda"), ("shape", "cpu"), ("vlm", "cuda")])

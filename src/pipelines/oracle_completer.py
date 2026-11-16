@@ -12,7 +12,7 @@ from PIL import Image
 from src.evaluation.metrics import compute_appearance_coherence_metrics
 from src.models.pix2gestalt_prior import synthesize_amodal_prior
 from src.stages.appearance_prior import build_oracle_appearance_seed
-from src.stages.sd2_refiner import refine_exact_mask_sd2_oracle
+from src.stages.inpaint_refiner import refine_exact_mask
 from src.stages.vlm_guidance import (
     DEFAULT_NEGATIVE_PROMPT,
     build_oracle_vlm_prompts,
@@ -58,8 +58,8 @@ class OracleMaskAmodalCompleter:
             user_query=user_query,
         )
 
-    def _refine_exact_mask_sd2(self, **kwargs) -> np.ndarray:
-        return refine_exact_mask_sd2_oracle(pipe=self.models.pipe, device=self.device, **kwargs)
+    def _refine_exact_mask(self, **kwargs) -> np.ndarray:
+        return refine_exact_mask(pipe=self.models.pipe, device=self.device, **kwargs)
 
     def _critique_target_aware(
         self,
@@ -170,7 +170,7 @@ class OracleMaskAmodalCompleter:
                 encoding="utf-8",
             )
 
-        # 3. Exact-mask 512x512 ROI SD2 refinement + Best-of-N Critic selection.
+        # 3. Exact-mask 512x512 ROI inpainting refinement + Best-of-N Critic selection.
         t_syn0 = time.perf_counter()
         sd_tok = self.models.pipe.tokenizer
         prompt = truncate_tokens_clean(
@@ -216,7 +216,7 @@ class OracleMaskAmodalCompleter:
             if job_dir is not None:
                 (job_dir / f"prompt_{attempts:02d}.txt").write_text(prompt, encoding="utf-8")
 
-            inpaint_img = self._refine_exact_mask_sd2(
+            inpaint_img = self._refine_exact_mask(
                 seed_canvas=seed_canvas,
                 visible_mask=vis,
                 occluded_mask=occ,
@@ -283,7 +283,7 @@ class OracleMaskAmodalCompleter:
         t_syn = time.perf_counter() - t_syn0
         t_total = time.perf_counter() - t0
         print(
-            f"[Timing] prior={t_prior:.1f}s | vlm={t_vlm:.1f}s | sd2+critic={t_syn:.1f}s | total={t_total:.1f}s "
+            f"[Timing] prior={t_prior:.1f}s | vlm={t_vlm:.1f}s | inpaint+critic={t_syn:.1f}s | total={t_total:.1f}s "
             f"(seam_mae={coherence['seam_mae']}, color_sim={coherence['color_hist_sim']})",
             flush=True,
         )
@@ -318,4 +318,3 @@ class OracleMaskAmodalCompleter:
                 "backend": "Oracle-Mask (Exact Input Occluded Mask)",
             },
         }
-

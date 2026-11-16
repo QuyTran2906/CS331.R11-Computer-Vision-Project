@@ -22,7 +22,7 @@ def lock_low_frequency_to_prior(
     max_low_shift: float = 10.0,
     high_gain: float = 0.60,
 ) -> np.ndarray:
-    """Anchor low-frequency color/structure to `seed_rgb` while transferring crisp SD2 micro-detail.
+    """Anchor low-frequency color/structure to `seed_rgb` while transferring crisp inpainted high-frequency detail.
 
     Prevents Stable Diffusion from hallucinating foreign objects (e.g. food inside an
     empty container or gray patches on dark clothing) wherever Pix2Gestalt already
@@ -112,4 +112,3 @@ def compose_cropped_for_critic(
     }
     patch = extract_square_roi(canvas, roi, pad_value=255)
     return resize_array(patch, (target_size, target_size), mode="linear")
-

@@ -1,4 +1,4 @@
-"""V2-only refinement hooks; V1 SD2 code and postprocessing remain unchanged.
+"""SD1.5 inpainting hooks for DDIM blending and optional IP-Adapter.
 
 Latent blending is restricted to DDIM, whose post-step noise level is explicit.
 Image-prompt attention requires real compatible adapter weights, not just embeds.

@@ -196,7 +196,7 @@ class OracleMaskPipelineTests(unittest.TestCase):
             {"score": 8.0, "structural": 8.0, "texture": 8.0, "context": 8.0, "feedback": "minor seam", "raw": ""},
             {"score": 5.0, "structural": 5.0, "texture": 5.0, "context": 5.0, "feedback": "too bright", "raw": ""},
         ]
-        completer._refine_exact_mask_sd2 = fake_refine
+        completer._refine_exact_mask = fake_refine
         completer._critique_target_aware = lambda **kwargs: scores.pop(0)
 
         old_torch = sys.modules.get("torch")
@@ -287,4 +287,3 @@ class OracleMaskPipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
