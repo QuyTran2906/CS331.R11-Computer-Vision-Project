@@ -1,0 +1,15 @@
+{
+  "seed": 42,
+  "pipeline_mode": "sd15_direct",
+  "use_occluded_mask_input": true,
+  "inpainting_model_id": "stable-diffusion-v1-5/stable-diffusion-inpainting",
+  "device": "cuda",
+  "text_query_policy": "empty",
+  "enable_critic": false,
+  "appearance_metrics": false,
+  "prompt": "A photograph of a single complete object on a plain white background, natural colors, realistic texture.",
+  "strength": 1.0,
+  "guidance_scale": 7.0,
+  "num_inference_steps": 28,
+  "refinement_scheduler": "ddim"
+}

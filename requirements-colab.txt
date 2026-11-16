@@ -4,6 +4,8 @@ numpy==1.26.4
 Pillow==11.3.0
 opencv-python==4.10.0.84
 diffusers==0.37.1
+# V2 uses this version's inpaint IP-Adapter loader and callback_on_step_end API.
+# Do not downgrade to 0.27.x; transformers 5.0.0 is retained for Qwen3-VL.
 transformers==5.0.0
 accelerate==1.13.0
 qwen_vl_utils==0.0.10

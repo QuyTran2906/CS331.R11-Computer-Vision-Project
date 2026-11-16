@@ -202,6 +202,24 @@ class SD2DirectTests(unittest.TestCase):
                 compare_profiles(records, *profiles, root / "comparison", 0)
             self.assertEqual(json.loads((root / "comparison/coverage.json").read_text())["main"]["missing"], 1)
 
+    def test_mask_given_v1_v2_comparison_and_labels(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            records, profiles = self.make_pair(root)
+            # Reuse verified synthetic image fixtures; mark reference/main as V1/V2.
+            for index, profile in enumerate(profiles):
+                for result_path in profile.glob("*/*/result.json"):
+                    result = json.loads(result_path.read_text())
+                    result["config"].update(pipeline_mode="oracle_mask", pipeline_version=index + 1, enable_critic=True)
+                    result_path.write_text(json.dumps(result))
+            summary = compare_profiles(records, *profiles, root / "cmp", 1,
+                                       comparison_kind="mask_given", baseline_label="V1", main_label="V2")
+            self.assertEqual(summary["comparison_kind"], "mask_given")
+            self.assertEqual(summary["baseline_label"], "V1")
+            self.assertEqual(summary["metrics"]["CLIP_score_delta"]["n"], len(records))
+            with self.assertRaisesRegex(ValueError, "requested reference mode"):
+                compare_profiles(records, *profiles, root / "bad", 0)
+
     def test_comparison_rejects_artifact_tampering_and_wrong_subset(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

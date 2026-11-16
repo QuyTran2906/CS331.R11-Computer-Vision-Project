@@ -16,11 +16,14 @@ class FoundationModels:
     """
 
     def __init__(self, inpainting_model_id: str, clip_model_id: str,
-                 vlm_model_id: str = DEFAULT_VLM_ID, device: str = "cuda"):
+                 vlm_model_id: str = DEFAULT_VLM_ID, device: str = "cuda", advanced_config=None,
+                 refinement_scheduler=None):
         self.device = device
         self.inpainting_model_id = inpainting_model_id
         self.clip_model_id = clip_model_id
         self.vlm_model_id = vlm_model_id
+        self.advanced_config = advanced_config
+        self.refinement_scheduler = refinement_scheduler
         self._models = {}
         self._active = None
         self._clip_processor = None
@@ -53,6 +56,12 @@ class FoundationModels:
             )
             pipe.set_progress_bar_config(disable=True)
             pipe.enable_vae_slicing()
+            if self.advanced_config is not None:
+                from src.stages.sd2_advanced import configure_v2_pipe
+                configure_v2_pipe(pipe, self.advanced_config)
+            elif self.refinement_scheduler == "ddim":
+                from src.stages.sd2_advanced import configure_ddim
+                configure_ddim(pipe)
             return pipe
         if name == "clip":
             from transformers import CLIPModel, CLIPProcessor

@@ -8,7 +8,7 @@ from PIL import Image
 
 os.environ["MPLBACKEND"] = "Agg"
 
-PIPELINE_MODES = ("improved", "oracle_mask", "sd2_direct")
+PIPELINE_MODES = ("improved", "oracle_mask", "sd2_direct", "sd15_direct")
 MODE_ALIASES = {"gt_mask": "oracle_mask"}
 TEXT_QUERY_POLICIES = ("empty", "dataset_object_name")
 
@@ -28,16 +28,33 @@ class AmodalBackend:
 
         from src.models.registry import FoundationModels
 
+        version = config.get("pipeline_version", 1)
+        if version not in (1, 2):
+            raise ValueError("pipeline_version must be 1 or 2")
+        advanced = {}
+        if version == 2:
+            from src.stages.sd2_advanced import validate_v2_config
+            validate_v2_config(config)
+            advanced["advanced_config"] = config
+        elif mode == "sd15_direct":
+            from src.pipelines.sd15_direct_completer import validate_sd15_direct
+            validate_sd15_direct(config)
+            advanced["refinement_scheduler"] = "ddim"
+
         self.models = FoundationModels(
             inpainting_model_id=config["inpainting_model_id"],
             clip_model_id=config.get("clip_model_id", "openai/clip-vit-base-patch32"),
             vlm_model_id=config.get("vlm_model_id", "Qwen/Qwen3-VL-4B-Instruct"),
             device="cuda",
+            **advanced,
         )
         self.config = config
         self.mode = mode
         self.job = None
-        if self.mode == "improved":
+        if version == 2:
+            from src.pipelines.v2_completer import V2AmodalCompleter
+            self.completer = V2AmodalCompleter(self.models, self.config)
+        elif self.mode == "improved":
             from src.pipelines.improved_completer import ImprovedAmodalCompleter
 
             self.completer = ImprovedAmodalCompleter(self.models, self.config)
@@ -45,6 +62,9 @@ class AmodalBackend:
             from src.pipelines.sd2_direct_completer import SD2DirectCompleter
 
             self.completer = SD2DirectCompleter(self.models, self.config)
+        elif self.mode == "sd15_direct":
+            from src.pipelines.sd15_direct_completer import SD15DirectCompleter
+            self.completer = SD15DirectCompleter(self.models, self.config)
         else:
             from src.pipelines.oracle_completer import OracleMaskAmodalCompleter
 
@@ -59,7 +79,7 @@ class AmodalBackend:
             raise ValueError(f"Unknown text_query_policy: {policy}")
         query = label if policy == "dataset_object_name" else ""
         try:
-            if self.mode == "sd2_direct":
+            if self.mode in ("sd2_direct", "sd15_direct"):
                 return self.completer.complete(image=image, visible_mask=visible,
                                                occluded_mask=occluded_mask, job_dir=self.job)
             if self.mode == "oracle_mask":

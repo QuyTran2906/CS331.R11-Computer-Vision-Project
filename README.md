@@ -11,6 +11,8 @@ Dự án hỗ trợ 3 chế độ thực thi trên GPU Colab:
 
 **Chạy baseline so với kết quả chính đã lưu:** notebook có ô **12–15** để chuẩn bị/chạy/chấm/so sánh dev50 rồi test400. Phiên Colab mới chạy **1 → 2 → 3B → 12–15**; ô 3B bỏ tải checkpoint Pix2Gestalt. Profile chính mặc định `a0ab44af3e253863`, không sinh lại 400 kết quả cũ. Xem [docs/BASELINE.md](docs/BASELINE.md).
 
+**Pipeline V2 (SD1.5 + IP-Adapter Plus):** `oracle_mask_v2.json` / `improved_v2.json` bật micro-attributes, Plus image conditioning, latent blending và strict critic. Có baseline mới `sd15_direct.json` và ablation `oracle_mask_v2_no_ip.json`. SD2 Direct và các config V1 giữ nguyên. Colab: **1 → 2 → 3 → 16–19**, mặc định thử 3 mẫu dev rồi tăng `V2_LIMIT=50`; ô 20 tùy chọn ablation. [Hướng dẫn V2](docs/PIPELINE_V2.md).
+
 Xem `docs/COLAB_SETUP.md` để chạy trên Google Colab với notebook `notebooks/Amodal_Completion_Colab.ipynb`. Chi tiết kiến trúc từng bước xem tại `docs/PIPELINE.md`.
 
 ## Metric và batch lớn

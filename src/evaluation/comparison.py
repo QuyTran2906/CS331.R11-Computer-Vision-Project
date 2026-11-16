@@ -70,6 +70,10 @@ def auto_restore_drive_backups(runs_root: Path, extra_backup_dir: Optional[Path]
 
 def classify_mode(data: dict) -> str:
     cfg_mode = data.get("config", {}).get("pipeline_mode", "")
+    if data.get("config", {}).get("pipeline_version") == 2:
+        return f"{cfg_mode}_v2"
+    if cfg_mode == "sd15_direct":
+        return "sd15_direct"
     backend_name = data.get("trace", {}).get("backend", "")
     if cfg_mode in ("oracle_mask", "gt_mask") or "Oracle" in backend_name:
         return "oracle_mask"
@@ -119,8 +123,9 @@ def discover_profiles_by_mode(runs_root: Path, backup_dir: Optional[Path] = None
     )
     for p in ordered:
         kind, _, res = load_profile_results(p)
-        if res:
-            by_mode.setdefault(kind, []).append(p)
+        if res and kind in by_mode:
+            # Legacy automatic comparison must not select a V2/SD1.5 profile as V1.
+            by_mode[kind].append(p)
     return by_mode
 
 

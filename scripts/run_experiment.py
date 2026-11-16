@@ -48,7 +48,13 @@ def main():
     parser.add_argument("--profile-output", type=Path, help="Write the exact successful profile ID for notebook follow-up cells")
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    if config.get("pipeline_mode") == "sd2_direct":
+    if config.get("pipeline_version") == 2:
+        from src.stages.sd2_advanced import validate_v2_config
+        validate_v2_config(config)
+    elif config.get("pipeline_mode") == "sd15_direct":
+        from src.pipelines.sd15_direct_completer import validate_sd15_direct
+        validate_sd15_direct(config)
+    elif config.get("pipeline_mode") == "sd2_direct":
         if config.get("enable_critic") or config.get("text_query_policy", "empty") != "empty":
             raise ValueError("SD2 Direct requires enable_critic=false and a fixed category-free prompt")
     elif not config.get("enable_critic"):
@@ -116,6 +122,9 @@ def main():
                         random.seed(config["seed"]); np.random.seed(config["seed"])
                         torch.manual_seed(config["seed"]); torch.cuda.manual_seed_all(config["seed"])
                         result, skipped = run_one(record, args.manifest.resolve().parent, output_root, config, lazy, profile)
+                        if config.get("pipeline_version") == 2:
+                            from src.evaluation.critic_logs import update_critic_log
+                            update_critic_log(output_root, result)
                         results.append(dict(sample_id=record["sample_id"], status="completed", resumed=skipped, metrics=result["metrics"]))
                         print(f"[{idx}/{len(records)}] {record['sample_id']}", "resumed" if skipped else f"completed ({result['seconds']}s)", result["metrics"], flush=True)
                     except Exception as error:

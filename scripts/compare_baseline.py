@@ -80,7 +80,8 @@ def verified_jobs(profile, records, directory, rows):
     return selected
 
 
-def make_previews(output, records, baseline, main, count=20, seed=42):
+def make_previews(output, records, baseline, main, count=20, seed=42,
+                  baseline_label="SD2 Direct", main_label="Main pipeline"):
     """Fixed random subset; identical object crop across the five columns."""
     chosen = random.Random(seed).sample(records, min(count, len(records)))
     files = []
@@ -100,7 +101,7 @@ def make_previews(output, records, baseline, main, count=20, seed=42):
             draw.text((5, row * 280 + 5), title, fill="black")
             tiles = [(bjob / "input.png", "Input crop"), (bjob / "visible.png", "Visible mask"),
                      (bjob / "amodal.png", "Given amodal mask"),
-                     (bjob / "completion.png", "SD2 Direct"), (mjob / "completion.png", "Main pipeline")]
+                     (bjob / "completion.png", baseline_label), (mjob / "completion.png", main_label)]
             for col, (path, label) in enumerate(tiles):
                 with Image.open(path) as src:
                     cropped = src.crop(box)
@@ -120,7 +121,11 @@ def make_previews(output, records, baseline, main, count=20, seed=42):
     return [r["sample_id"] for r in chosen], files
 
 
-def compare_profiles(records, baseline_profile, main_profile, output, preview_count=20):
+def compare_profiles(records, baseline_profile, main_profile, output, preview_count=20,
+                     comparison_kind="direct", baseline_label=None, main_label="Main pipeline"):
+    if comparison_kind not in ("direct", "mask_given"):
+        raise ValueError("comparison_kind must be direct or mask_given")
+    baseline_label = baseline_label or ("SD2 Direct" if comparison_kind == "direct" else "Reference pipeline")
     if not records or len({r["sample_id"] for r in records}) != len(records):
         raise ValueError("Empty manifest or duplicate IDs")
     if baseline_profile.resolve() == main_profile.resolve():
@@ -143,12 +148,16 @@ def compare_profiles(records, baseline_profile, main_profile, output, preview_co
     for record in records:
         sid = record["sample_id"]
         bc, mc = bj[sid][1]["config"], mj[sid][1]["config"]
-        if bc.get("pipeline_mode") != "sd2_direct" or mc.get("pipeline_mode") not in ("oracle_mask", "gt_mask"):
-            raise ValueError("Expected sd2_direct baseline and oracle_mask main profiles")
-        if bc.get("enable_critic") or bc.get("text_query_policy", "empty") != "empty":
+        allowed_reference = ("sd2_direct", "sd15_direct") if comparison_kind == "direct" else ("oracle_mask", "gt_mask")
+        if bc.get("pipeline_mode") not in allowed_reference or mc.get("pipeline_mode") not in ("oracle_mask", "gt_mask"):
+            raise ValueError("Expected the requested reference mode and oracle_mask main profiles")
+        if comparison_kind == "direct" and (bc.get("enable_critic") or bc.get("text_query_policy", "empty") != "empty"):
             raise ValueError("Baseline must have no critic and no annotation-label prompt")
-        if any(bc.get(k) != mc.get(k) for k in ("seed", "inpainting_model_id")) or mc.get("text_query_policy", "empty") != "empty":
+        if any(bc.get(k) != mc.get(k) for k in ("seed", "inpainting_model_id")) or any(c.get("text_query_policy", "empty") != "empty" for c in (bc, mc)):
             raise ValueError(f"Seed, SD2 checkpoint or label policy differs: {sid}")
+        if bc.get("pipeline_mode") == "sd15_direct" or (bc.get("pipeline_version") == 2 and mc.get("pipeline_version") == 2):
+            if bc.get("refinement_scheduler") != mc.get("refinement_scheduler"):
+                raise ValueError(f"Refinement schedulers differ: {sid}")
         for name in ("input.png", "visible.png", "occluded_input.png", "amodal.png"):
             if bj[sid][2][name] != mj[sid][2][name]:
                 # Different Pillow/PNG encoders may produce different bytes for
@@ -180,8 +189,10 @@ def compare_profiles(records, baseline_profile, main_profile, output, preview_co
         return aggregate([dict(status="completed", metrics={k: v for k, v in row.items()
                          if k.endswith(("_baseline", "_main", "_delta"))}) for row in selected])["metrics"]
 
-    chosen, previews = make_previews(output, records, bj, mj, preview_count)
+    chosen, previews = make_previews(output, records, bj, mj, preview_count,
+                                     baseline_label=baseline_label, main_label=main_label)
     summary = dict(baseline=baseline_profile.name, main=main_profile.name, samples=len(records),
+                   comparison_kind=comparison_kind, baseline_label=baseline_label, main_label=main_label,
                    subset_id=subset_hash(records), protocol=bp, delta_definition="main minus baseline",
                    metric_directions=METRICS, metrics=summarize(paired),
                    groups={key: {str(v): summarize([r for r in paired if r.get(key) == v])
@@ -195,7 +206,7 @@ def compare_profiles(records, baseline_profile, main_profile, output, preview_co
                           "Full-system comparison with different generation budgets, not a per-component ablation."])
     write_json(output / "comparison.json", summary)
     print(f"Paired comparison: {len(records)} objects | {baseline_profile.name} -> {main_profile.name}")
-    print(f"{'Metric':22} {'SD2 Direct':>12} {'Main':>12} {'Main - Direct':>15} {'n':>5}")
+    print(f"{'Metric':22} {baseline_label:>12} {main_label:>12} {'Main - Ref':>15} {'n':>5}")
     for name in METRICS:
         values = [summary["metrics"][f"{name}_{k}"] for k in ("baseline", "main", "delta")]
         formatted = [f"{v['mean']:.6g}" if v["mean"] is not None else "N/A" for v in values]
@@ -215,11 +226,14 @@ def main():
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--preview-count", type=int, default=20)
     parser.add_argument("--backup-dir", type=Path)
+    parser.add_argument("--comparison-kind", choices=("direct", "mask_given"), default="direct")
+    parser.add_argument("--baseline-label")
+    parser.add_argument("--main-label", default="Main pipeline")
     args = parser.parse_args()
     if args.backup_dir:
         auto_restore_drive_backups(args.runs_root, args.backup_dir, profiles={args.baseline, args.main_profile})
     compare_profiles(read_json(args.manifest), args.runs_root / args.baseline, args.runs_root / args.main_profile,
-                     args.output_dir, args.preview_count)
+                     args.output_dir, args.preview_count, args.comparison_kind, args.baseline_label, args.main_label)
 
 
 if __name__ == "__main__":

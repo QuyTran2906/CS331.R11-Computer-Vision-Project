@@ -31,6 +31,7 @@ Qwen3-VL semantic reasoning → Pix2Gestalt / CarveKit prior → Hybrid SD2 ROI 
   - `configs/oracle_mask.json` (`pipeline_mode = "oracle_mask"`): **nhận thẳng mask phần bị che từ input** (`gt_hidden` / `occluded_mask`) theo thiết lập Mask-Guided Amodal Appearance Completion.
   - `configs/sd2_direct.json`: **baseline SD2 Direct**, mask có sẵn, prompt cố định, sinh một lần.
 - **Chỉ chạy baseline và so với 400 kết quả đã có:** phiên mới chạy **1 → 2 → 3B → 12 → 13 → 14 → 15**. Phiên đã cài môi trường: cập nhật ô 2 rồi chạy 12–15. Bỏ qua 4–11; không sinh lại pipeline chính. Ô 12 mặc định dev50, sau khi chốt baseline chuyển sang test400.
+- **Chạy V2 (SD1.5 + IP-Adapter Plus):** phiên mới **1 → 2 → 3 → 16 → 17 → 18 → 19**. Ô 16 mặc định thử 3 mẫu đầu của dev50, sau đó tăng `V2_LIMIT=50`. Ô 17 sinh baseline SD1.5 Direct mới, ô 18 sinh V2, ô 19 so sánh. Ô 20 tùy chọn ablation tắt IP-Adapter. Các profile SD2/V1 cũ được giữ nguyên. Chi tiết: `docs/PIPELINE_V2.md`.
 """)
     md("## 1. GPU và Google Drive\nẨn thanh tiến trình phần trăm; vẫn hiển thị trạng thái tải model, kết quả từng mẫu và lỗi. Log của pipeline vẫn được lưu trong `outputs/runs/<profile>/pipeline.log`.")
     code("""import subprocess, sys, os, shutil, zipfile, json, base64, re
@@ -275,6 +276,8 @@ archive = Path(shutil.make_archive(str(COMPARE_DIR), "zip", COMPARE_DIR))
 shutil.copy2(archive, comparison_backup / archive.name)
 print("Comparison backup:", comparison_backup / archive.name)
 ''')
+    from notebook_v2_cells import append_v2_cells
+    append_v2_cells(md, code)
     for i, cell in enumerate(cells):
         cell["id"] = f"amodal-{i:02d}"
         if cell["cell_type"] == "code":

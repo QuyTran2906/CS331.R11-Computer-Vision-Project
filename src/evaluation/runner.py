@@ -60,7 +60,7 @@ def resolve_sample(base, value):
 
 
 def _uses_occluded_mask_input(config):
-    return config.get("pipeline_mode") in ("oracle_mask", "gt_mask", "sd2_direct") or bool(config.get("use_occluded_mask_input"))
+    return config.get("pipeline_mode") in ("oracle_mask", "gt_mask", "sd2_direct", "sd15_direct") or bool(config.get("use_occluded_mask_input"))
 
 
 def run_one(record, sample_root, output_root, config, backend, profile):
@@ -155,9 +155,9 @@ def run_one(record, sample_root, output_root, config, backend, profile):
             name=record.get("name"),
             seconds=round(time.perf_counter() - started, 3),
             final_score=output.get("final_score"),
-            critic_accepted=(
+            critic_accepted=output.get("critic_accepted", (
                 output.get("final_score") is not None and output["final_score"] >= config["critique_threshold"]
-            ),
+            )),
             critique_history=history,
             trace=trace,
             metrics=metrics,
@@ -177,6 +177,9 @@ def run_one(record, sample_root, output_root, config, backend, profile):
         ]
         if oracle_mode:
             artifacts.append("occluded_input.png")
+        if config.get("pipeline_version") == 2:
+            artifacts += [name for name in ("micro_attributes.json", "critic_logs.jsonl", "v2_selection.json")
+                          if (job / name).is_file()]
         result["artifact_sha256"] = {name: sha(job / name) for name in artifacts}
         (job / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         if (job / "failure.json").exists():

@@ -46,6 +46,9 @@ def prepare_direct_inputs(image, visible_mask, occluded_mask):
 
 
 class SD2DirectCompleter:
+    baseline_name = "SD2 Direct"
+    settings_filename = "sd2_settings.json"
+
     def __init__(self, models, config):
         self.models, self.config = models, config
         if config.get("text_query_policy", "empty") != "empty" or config.get("enable_critic", False):
@@ -75,13 +78,13 @@ class SD2DirectCompleter:
             Image.fromarray(canvas).save(job / "baseline_input.png")
             Image.fromarray(inpaint_region.astype(np.uint8) * 255).save(job / "inpainting_mask.png")
             (job / "prompt_01.txt").write_text(self.prompt, encoding="utf-8")
-            (job / "sd2_settings.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
+            (job / self.settings_filename).write_text(json.dumps(settings, indent=2), encoding="utf-8")
         model_load_seconds, inference_seconds = 0.0, 0.0
         if occ.any():
             load_started = time.perf_counter()
             pipe = self.models.pipe  # The only model this baseline activates.
             model_load_seconds = time.perf_counter() - load_started
-            print(f"[SD2 Direct] One pass, ROI={roi['size']}, steps={self.steps}, strength={self.strength}", flush=True)
+            print(f"[{self.baseline_name}] One pass, ROI={roi['size']}, steps={self.steps}, strength={self.strength}", flush=True)
             inference_started = time.perf_counter()
             generated = _run_sd2_roi_pass(
                 pipe=pipe, device=self.models.device, seed_canvas=canvas,
@@ -101,7 +104,7 @@ class SD2DirectCompleter:
         if job_dir is not None:
             Image.fromarray(completed).save(job / "inpainting_01.png")
         return dict(inpainted_rgba=rgba, amodal_mask=amodal, final_score=None, critique_history=[],
-                    _trace=dict(backend="SD2 Direct (fixed prompt, input hidden mask)", pad_info={},
+                    _trace=dict(backend=f"{self.baseline_name} (fixed prompt, input hidden mask)", pad_info={},
                                 synthesis_attempts=int(occ.any()), settings=settings,
                                 model_load_seconds=round(model_load_seconds, 3),
                                 sd2_seconds=round(inference_seconds, 3),
